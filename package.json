@@ -1,26 +1,40 @@
 {
   "name": "wiki-plugin-similarity",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Federated Wiki plugin — semantic similarity search across wiki domains using prebuilt vector indexes",
-  "keywords": ["wiki", "federated wiki", "plugin", "similarity", "semantic search", "embeddings"],
+  "keywords": [
+    "wiki",
+    "federated wiki",
+    "plugin",
+    "similarity",
+    "semantic search",
+    "embeddings"
+  ],
   "author": {
     "name": "David Bovill",
     "url": "https://github.com/Hitchhikers-Guide-to-the-Galaxy"
   },
   "license": "MIT",
   "type": "module",
-  "files": ["client", "server", "pages", "factory.json"],
+  "files": [
+    "client",
+    "server",
+    "pages",
+    "factory.json"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity.git"
   },
-  "engines": { "node": ">=18.x" },
+  "engines": {
+    "node": ">=18.x"
+  },
   "scripts": {
     "build": "npm run clean && npm run test && node --no-warnings scripts/build-client.js",
-    "dev":   "node --no-warnings scripts/build-client.js --watch",
+    "dev": "node --no-warnings scripts/build-client.js --watch",
     "about": "wiki -p 3010 -d . --security_legacy",
     "clean": "rm -f client/similarity.js client/similarity.js.map",
-    "test":  "node --test",
+    "test": "node --test",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
