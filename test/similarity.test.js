@@ -17,6 +17,10 @@ const parseDSL = text => {
     if (!line || line.startsWith('#')) continue
     const upper = line.toUpperCase()
     if (isCmd(upper, 'LIVE'))  { live = true; continue }
+    if (isCmd(upper, 'AUTHOR')) {
+      if (!specs.length && mode === 'search') mode = 'author'
+      continue
+    }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -90,6 +94,12 @@ describe('parseDSL — bare commands default sensibly', () => {
   it('bare LIMIT defaults to 10', () => assert.equal(parseDSL('LIMIT').limit, 10))
   it('bare THRESHOLD defaults to medium', () => assert.equal(parseDSL('THRESHOLD').threshold, 0.68))
   it('bare LIST triggers list mode', () => assert.equal(parseDSL('LIST').mode, 'list'))
+  it('bare AUTHOR triggers author mode', () => assert.equal(parseDSL('AUTHOR').mode, 'author'))
+  it('AUTHOR with domain spec stays search mode', () => {
+    const r = parseDSL('david.*\nAUTHOR')
+    assert.equal(r.mode, 'search')
+    assert.deepEqual(r.specs, ['david.*'])
+  })
   it('domain starting with SIMILAR is not treated as command', () => {
     const r = parseDSL('similarity.example.com')
     assert.deepEqual(r.specs, ['similarity.example.com'])

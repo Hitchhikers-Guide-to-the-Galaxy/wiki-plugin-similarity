@@ -60,6 +60,10 @@ const parseDSL = text => {
 
     const upper = line.toUpperCase()
     if (isCmd(upper, 'LIVE'))  { live = true; continue }
+    if (isCmd(upper, 'AUTHOR')) {
+      if (!specs.length && mode === 'search') mode = 'author'
+      continue
+    }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -290,6 +294,18 @@ export const emit = (div, item) => {
         <div class="sim-status">Finding similar pages across ${label}…</div>
         <div class="sim-results"></div>
       </div>`)
+  } else if (mode === 'author') {
+    const label = specs.length ? specs.join(', ') : '(current domain)'
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}">
+        <div class="sim-form">
+          <input class="sim-input" type="text" placeholder="Search wiki pages…" />
+          <button class="sim-btn">Author</button>
+        </div>
+        <div class="sim-status">Domains: ${label}</div>
+        <div class="sim-results"></div>
+      </div>`)
   } else {
     const label = specs.length ? specs.join(', ') : '(current domain)'
     div.html(`
@@ -408,6 +424,74 @@ export const bind = (div, item) => {
         }
       })()
     }
+
+  } else if (mode === 'author') {
+    // Author mode — same search form but creates a ghost page from results
+    const input   = div.find('.sim-input')[0]
+    const btn     = div.find('.sim-btn')[0]
+    const results = div.find('.sim-results')[0]
+    let domainEntries = null
+
+    ;(async () => {
+      try {
+        if (!cache) status.textContent = 'Resolving domains…'
+        domainEntries = await loadDomainEntries(specs, origin)
+        const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
+        status.textContent = `Ready — ${total.toLocaleString()} pages across ${domainEntries.length} domains`
+      } catch (e) {
+        status.textContent = `Load error: ${e.message}`
+      }
+    })()
+
+    const doAuthor = async () => {
+      const query = input.value.trim()
+      if (!query || !domainEntries) return
+      btn.disabled = true
+      status.textContent = 'Embedding query…'
+      results.innerHTML = ''
+      try {
+        const qVec  = await getEmbedding(query, origin)
+        const scored = cosineScan(qVec, domainEntries,
+          { threshold, limit, excludeSlug: null, excludeDomain: null })
+
+        // Group by title: first occurrence is primary, duplicates are additional
+        const seen    = new Map() // title → first {domain, slug}
+        const primary = []
+        const extras  = []
+        for (const { domain, slug, title, score } of scored) {
+          if (!seen.has(title)) {
+            seen.set(title, { domain, slug })
+            primary.push({ domain, slug, title, score })
+          } else {
+            extras.push({ domain, slug, title, score })
+          }
+        }
+
+        const primaryLines = primary.map(({ title }) => `- [[${title}]]`).join('\n')
+        const extrasLines  = extras.map(({ domain, slug, title }) =>
+          `- [${title}](${window.location.protocol}//${domain}/view/${slug})`).join('\n')
+
+        let pageText = `# Similar Pages\n\n${primaryLines}`
+        if (extras.length) pageText += `\n\n# Additional Pages\n\n${extrasLines}`
+
+        const pageObj = window.wiki.newPage({
+          title: query,
+          story: [{ type: 'markdown', id: Math.random().toString(16).slice(2).padEnd(16,'0'), text: pageText }],
+          journal: [],
+        })
+        window.wiki.showResult(pageObj, { $page: div.parents('.page') })
+
+        status.textContent = `${scored.length} pages found`
+        writeCache(item, { scored, query })
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    btn.addEventListener('click', doAuthor)
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doAuthor() })
 
   } else {
     // Search form mode
