@@ -157,9 +157,11 @@ export const startServer = ({ argv, app }) => {
   // ── GET /system/indexed-domains.json?pattern=glob1,glob2 ──────────────────
   app.get('/system/indexed-domains.json', (req, res) => {
     cors(res)
-    const raw = req.query.pattern || '*'
+    const raw      = req.query.pattern || '*'
     const patterns = raw.split(',').map(p => p.trim()).filter(Boolean)
-    const results = findIndexedDomains(farmRoot, patterns)
+    const limit    = parseInt(req.query.limit) || null
+    let results    = findIndexedDomains(farmRoot, patterns)
+    if (limit) results = results.slice(0, limit)
     res.json(results)
   })
 

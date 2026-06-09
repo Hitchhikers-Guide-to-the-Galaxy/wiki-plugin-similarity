@@ -289,7 +289,7 @@ export const bind = (div, item) => {
     const patterns = specs.length ? specs.join(',') : '*'
     const run = async () => {
       try {
-        const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}`
+        const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}&limit=${limit}`
         const res = await fetch(url)
         if (!res.ok) throw new Error(`indexed-domains failed: ${res.status}`)
         const allDomains = await res.json()
