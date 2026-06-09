@@ -44,6 +44,7 @@ const parseDSL = text => {
   let threshold = null
   let limit     = null
   let mode      = 'search'  // default: interactive search form
+  let live      = false     // default: cache results in localStorage
 
   // Match a keyword at the start of a line (case-insensitive), requiring it to
   // be followed by end-of-string, whitespace, or colon — not by more word chars.
@@ -58,6 +59,7 @@ const parseDSL = text => {
     if (!line || line.startsWith('#')) continue
 
     const upper = line.toUpperCase()
+    if (isCmd(upper, 'LIVE'))  { live = true; continue }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -85,6 +87,7 @@ const parseDSL = text => {
     specs,
     threshold: threshold ?? DEFAULT_THRESHOLD,
     limit:     limit     ?? DEFAULT_LIMIT,
+    live,
   }
 }
 
@@ -199,6 +202,37 @@ const loadDomainEntries = async (specs, origin) => {
   return entries.filter(e => e.pages.length > 0)
 }
 
+// ── Result cache (localStorage) ──────────────────────────────────────────────
+// Cache is keyed by item id. Invalidated when item.text changes (DSL edited).
+// LIVE mode bypasses the cache entirely.
+
+const cacheKey = id => `sim-cache-${id}`
+
+const readCache = item => {
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey(item.id)) || 'null')
+    return c?.text === (item.text || '') ? c : null
+  } catch { return null }
+}
+
+const writeCache = (item, data) => {
+  try {
+    localStorage.setItem(cacheKey(item.id), JSON.stringify({
+      text: item.text || '',
+      ts:   Date.now(),
+      ...data,
+    }))
+  } catch { /* storage unavailable or full */ }
+}
+
+const cacheAge = ts => {
+  const s = Math.floor((Date.now() - ts) / 1000)
+  if (s < 60)    return `${s}s ago`
+  if (s < 3600)  return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const STYLES = `
@@ -272,114 +306,135 @@ export const emit = (div, item) => {
 }
 
 export const bind = (div, item) => {
-  const { mode, specs, threshold, limit } = parseDSL(item?.text || '')
+  const { mode, specs, threshold, limit, live } = parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
+  const cache   = live ? null : readCache(item)
 
   div.on('dblclick', () => window.wiki.textEditor(div, item))
-
   div.on('click', '.sim-link', function (e) {
     e.preventDefault()
     const $a = $(this)
     window.wiki.doInternalLink($a.data('title'), div.parents('.page'), $a.data('site'))
   })
 
+  const scopeLabel = !specs.length || (specs.length === 1 && specs[0] === '*')
+    ? 'on farm'
+    : specs.length === 1 ? `on ${specs[0]}` : 'in domains'
+
+  const cacheNote = ts => ts ? ` · cached ${cacheAge(ts)}` : ''
+
   if (mode === 'list') {
-    // List all indexed domains matching the spec patterns (default: all)
     const listDiv = div.find('.sim-list')[0]
     const patterns = specs.length ? specs.join(',') : '*'
-    const run = async () => {
-      try {
-        const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}&limit=${limit}`
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`indexed-domains failed: ${res.status}`)
-        const allDomains = await res.json()
-        if (!allDomains.length) {
-          status.textContent = 'No indexed domains found'
-          return
-        }
-        const shown = allDomains.slice(0, limit)
-        const totalPages = allDomains.reduce((n, d) => n + (d.page_count || 0), 0)
-        const countNote = shown.length < allDomains.length
-          ? `showing ${shown.length} of ${allDomains.length}`
-          : `${allDomains.length} domains`
-        status.style.display = 'none'
-        listDiv.innerHTML = `<h3>Indexed Farm Domains</h3>
+
+    const renderList = (domains, ts) => {
+      const totalPages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
+      status.style.display = 'none'
+      listDiv.innerHTML = `<h3>Indexed Farm Domains</h3>
         <table>
           <tr><th>Domain</th><th>Pages</th></tr>
-          ${shown.map(({ domain, page_count }) => `
+          ${domains.map(({ domain, page_count }) => `
             <tr>
               <td><img class="sim-flag remote" src="${window.wiki.site(domain).flag()}"
                        title="${domain}" data-site="${domain}"> ${domain}</td>
               <td>${page_count != null ? page_count.toLocaleString() : '—'}</td>
             </tr>`).join('')}
         </table>
-        <p class="sim-count">${countNote} — ${totalPages.toLocaleString()} pages</p>`
-      } catch (e) {
-        status.textContent = `Error: ${e.message}`
-      }
+        <p class="sim-count">${domains.length} domains — ${totalPages.toLocaleString()} pages${cacheNote(ts)}</p>`
     }
-    run()
+
+    if (cache?.domains) {
+      renderList(cache.domains, cache.ts)
+    } else {
+      ;(async () => {
+        try {
+          const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}&limit=${limit}`
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`indexed-domains failed: ${res.status}`)
+          const domains = await res.json()
+          if (!domains.length) { status.textContent = 'No indexed domains found'; return }
+          renderList(domains, null)
+          writeCache(item, { domains })
+        } catch (e) {
+          status.textContent = `Error: ${e.message}`
+        }
+      })()
+    }
+
   } else if (mode === 'similar') {
-    // Ambient mode — run automatically, no search form
-    const run = async () => {
-      try {
-        const $page     = div.parents('.page')
-        const pageTitle = $page.find('.title').text().trim() || document.title
-        const currentSlug   = slugify(pageTitle)
-        const currentDomain = window.location.hostname
+    const results = div.find('.sim-results')[0]
 
-        const domainEntries = await loadDomainEntries(specs, origin)
-        const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-        status.textContent = `Searching ${total.toLocaleString()} pages…`
-
-        let qVec = await lookupPageVector(currentSlug, currentDomain)
-        if (!qVec) {
-          status.textContent = 'Embedding page (not yet indexed)…'
-          const pageText = $page.find('.item').map((_, el) => $(el).text().trim()).get().filter(Boolean).join('\n')
-          qVec = await getEmbedding(pageText || pageTitle, origin)
-        }
-
-        const scored = cosineScan(qVec, domainEntries, {
-          threshold, limit, excludeSlug: currentSlug, excludeDomain: currentDomain,
-        })
-
-        if (!scored.length) {
-          status.textContent = `No similar pages found above threshold ${threshold}`
-          return
-        }
-        const scopeLabel = !specs.length || (specs.length === 1 && specs[0] === '*')
-          ? 'on farm'
-          : specs.length === 1 ? `on ${specs[0]}` : 'in domains'
-        const results = div.find('.sim-results')[0]
-        results.innerHTML = `<h3>Similar Pages</h3><ul>${
-          scored.map(({ domain, slug, title, score }) =>
-            `<li>${simLink(domain, slug, title, score)}</li>`).join('')
-        }</ul><p class="sim-count">${scored.length} found ${scopeLabel}</p>`
-        status.style.display = 'none'
-      } catch (e) {
-        status.textContent = `Error: ${e.message}`
+    const renderScored = (scored, ts) => {
+      if (!scored.length) {
+        status.textContent = `No similar pages found above threshold ${threshold}`
+        return
       }
+      results.innerHTML = `<h3>Similar Pages</h3><ul>${
+        scored.map(({ domain, slug, title, score }) =>
+          `<li>${simLink(domain, slug, title, score)}</li>`).join('')
+      }</ul><p class="sim-count">${scored.length} found ${scopeLabel}${cacheNote(ts)}</p>`
+      status.style.display = 'none'
     }
-    run()
+
+    if (cache?.scored) {
+      renderScored(cache.scored, cache.ts)
+    } else {
+      ;(async () => {
+        try {
+          const $page         = div.parents('.page')
+          const pageTitle     = $page.find('.title').text().trim() || document.title
+          const currentSlug   = slugify(pageTitle)
+          const currentDomain = window.location.hostname
+
+          const domainEntries = await loadDomainEntries(specs, origin)
+          const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
+          status.textContent = `Searching ${total.toLocaleString()} pages…`
+
+          let qVec = await lookupPageVector(currentSlug, currentDomain)
+          if (!qVec) {
+            status.textContent = 'Embedding page (not yet indexed)…'
+            const pageText = $page.find('.item').map((_, el) => $(el).text().trim()).get().filter(Boolean).join('\n')
+            qVec = await getEmbedding(pageText || pageTitle, origin)
+          }
+
+          const scored = cosineScan(qVec, domainEntries, {
+            threshold, limit, excludeSlug: currentSlug, excludeDomain: currentDomain,
+          })
+          renderScored(scored, null)
+          if (scored.length) writeCache(item, { scored })
+        } catch (e) {
+          status.textContent = `Error: ${e.message}`
+        }
+      })()
+    }
+
   } else {
-    // Search form mode — preload domains, then wait for user input
+    // Search form mode
     const input   = div.find('.sim-input')[0]
     const btn     = div.find('.sim-btn')[0]
     const results = div.find('.sim-results')[0]
     let domainEntries = null
 
-    const preload = async () => {
+    // Show cached results immediately while domains preload in background
+    if (cache?.scored) {
+      input.value = cache.query || ''
+      results.innerHTML = cache.scored.map(({ domain, slug, title, score }) =>
+        `<div class="sim-result">${simLink(domain, slug, title, score)}</div>`).join('') +
+        `<p class="sim-count">Top ${cache.scored.length} for "${cache.query || ''}"${cacheNote(cache.ts)}</p>`
+      status.textContent = ''
+    }
+
+    ;(async () => {
       try {
-        status.textContent = 'Resolving domains…'
+        if (!cache) status.textContent = 'Resolving domains…'
         domainEntries = await loadDomainEntries(specs, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
         status.textContent = `Ready — ${total.toLocaleString()} pages across ${domainEntries.length} domains`
       } catch (e) {
         status.textContent = `Load error: ${e.message}`
       }
-    }
-    preload()
+    })()
 
     const doSearch = async () => {
       const query = input.value.trim()
@@ -392,8 +447,10 @@ export const bind = (div, item) => {
         const scored = cosineScan(qVec, domainEntries,
           { threshold: 0, limit, excludeSlug: null, excludeDomain: null })
         results.innerHTML = scored.map(({ domain, slug, title, score }) =>
-          `<div class="sim-result">${simLink(domain, slug, title, score)}</div>`).join('')
-        status.textContent = `Top ${scored.length} results for "${query}"`
+          `<div class="sim-result">${simLink(domain, slug, title, score)}</div>`).join('') +
+          `<p class="sim-count">Top ${scored.length} for "${query}"</p>`
+        status.textContent = ''
+        writeCache(item, { scored, query })
       } catch (e) {
         status.textContent = `Error: ${e.message}`
       } finally {

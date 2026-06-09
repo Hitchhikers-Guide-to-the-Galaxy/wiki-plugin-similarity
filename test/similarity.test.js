@@ -9,13 +9,14 @@ const DEFAULT_LIMIT      = 10
 
 const parseDSL = text => {
   const specs = []
-  let threshold = null, limit = null, mode = 'search'
+  let threshold = null, limit = null, mode = 'search', live = false
   const isCmd = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
   const val   = (line, kw) => line.slice(kw.length).replace(/^\s*:?\s*/, '').trim()
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
     const upper = line.toUpperCase()
+    if (isCmd(upper, 'LIVE'))  { live = true; continue }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -36,7 +37,7 @@ const parseDSL = text => {
     }
     specs.push(line)
   }
-  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT }
+  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
@@ -116,6 +117,14 @@ describe('parseDSL — params do not bleed into specs', () => {
   it('LIMIT line not in specs', () => {
     assert.deepEqual(parseDSL('david.*\nLIMIT: 5').specs, ['david.*'])
   })
+})
+
+describe('parseDSL — LIVE flag', () => {
+  it('default is not live', () => assert.equal(parseDSL('SIMILAR').live, false))
+  it('LIVE sets live=true', () => assert.equal(parseDSL('LIVE\nSIMILAR').live, true))
+  it('LIVE anywhere in DSL sets live', () => assert.equal(parseDSL('SIMILAR\nLIVE').live, true))
+  it('LIVE does not affect mode', () => assert.equal(parseDSL('LIVE\nSIMILAR').mode, 'similar'))
+  it('LIVE does not end up in specs', () => assert.deepEqual(parseDSL('LIVE\ndavid.*').specs, ['david.*']))
 })
 
 // ── isGlob ────────────────────────────────────────────────────────────────────
