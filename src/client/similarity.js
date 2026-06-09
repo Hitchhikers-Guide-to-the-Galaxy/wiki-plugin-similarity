@@ -454,31 +454,26 @@ export const bind = (div, item) => {
         const scored = cosineScan(qVec, domainEntries,
           { threshold, limit, excludeSlug: null, excludeDomain: null })
 
-        // Group by title: first occurrence is primary, duplicates are additional
-        const seen    = new Map() // title → first {domain, slug}
-        const primary = []
-        const extras  = []
-        for (const { domain, slug, title, score } of scored) {
-          if (!seen.has(title)) {
-            seen.set(title, { domain, slug })
-            primary.push({ domain, slug, title, score })
-          } else {
-            extras.push({ domain, slug, title, score })
-          }
+        // Unique titles for wiki-link list
+        const seenTitles = new Set()
+        const uniqueTitles = []
+        for (const { title } of scored) {
+          if (!seenTitles.has(title)) { seenTitles.add(title); uniqueTitles.push(title) }
         }
 
-        const primaryLines = primary.map(({ title }) => `- [[${title}]]`).join('\n')
-        const extrasLines  = extras.map(({ domain, slug, title }) =>
-          `- [${title}](${window.location.protocol}//${domain}/view/${slug})`).join('\n')
+        const hexId = () => Math.floor(Math.random() * 0xffffffffffffffff).toString(16).padStart(16, '0')
+        const primaryLines = uniqueTitles.map(t => `- [[${t}]]`).join('\n')
 
-        let pageText = `# Similar Pages\n\n${primaryLines}`
-        if (extras.length) pageText += `\n\n# Additional Pages\n\n${extrasLines}`
+        const story = [
+          { type: 'markdown', id: hexId(), text: `# Similar Pages\n\n${primaryLines}` },
+          { type: 'markdown', id: hexId(), text: '# Reference Links' },
+          ...scored.map(({ domain, slug, title, score }) => ({
+            type: 'reference', id: hexId(), site: domain, slug, title,
+            text: `score ${score.toFixed(3)}`,
+          })),
+        ]
 
-        const pageObj = window.wiki.newPage({
-          title: query,
-          story: [{ type: 'markdown', id: Math.random().toString(16).slice(2).padEnd(16,'0'), text: pageText }],
-          journal: [],
-        })
+        const pageObj = window.wiki.newPage({ title: `${query} Results`, story, journal: [] })
         window.wiki.showResult(pageObj, { $page: div.parents('.page') })
 
         status.textContent = `${scored.length} pages found`

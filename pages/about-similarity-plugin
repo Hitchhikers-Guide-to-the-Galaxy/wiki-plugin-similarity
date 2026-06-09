@@ -4,12 +4,12 @@
     {
       "type": "markdown",
       "id": "61ccb2d2cdb60c71",
-      "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. One item type — **similarity** — with behaviour controlled by a DSL: interactive search form by default, ambient similar-pages panel when `SIMILAR` is the first line."
+      "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. One item type — **similarity** — with behaviour controlled by a DSL: interactive search form by default, ambient similar-pages panel, domain index listing, or author mode for generating wiki pages from search results."
     },
     {
       "type": "markdown",
       "id": "a3f7c8d2e1b94056",
-      "text": "**Version:** 0.1.7 — [GitHub](https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity) · [npm](https://www.npmjs.com/package/wiki-plugin-similarity)"
+      "text": "**Version:** 0.3.1 — [GitHub](https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity) · [npm](https://www.npmjs.com/package/wiki-plugin-similarity)"
     },
     {
       "type": "similarity",
@@ -24,17 +24,37 @@
     {
       "type": "markdown",
       "id": "0d628d43edf9f8e8",
-      "text": "The item's `text` field configures which domains to search and how:\n\n```\n*                        all indexed domains on this server\ndavid.*                  glob pattern\ndavid.hitchhikers.earth  explicit domain\n# comment                ignored\nLIST                     show a table of indexed domains\nSIMILAR                  ambient mode (default: medium threshold)\nSIMILAR high             threshold preset  (high=0.78 / medium=0.68 / low=0.58)\nTHRESHOLD 0.72           exact cosine threshold\nLIMIT 8                  max results (default 10)\n```\n\nColons and extra whitespace are optional — `LIMIT: 8`, `LIMIT 8`, and `LIMIT:8` all work. Leave `text` empty for an interactive search form on the current domain."
+      "text": "The item's `text` field configures which domains to search and how:\n\n```\n*                        all indexed domains on this server\ndavid.*                  glob pattern\ndavid.hitchhikers.earth  explicit domain\n# comment                ignored\nLIST                     show a table of indexed domains\nSIMILAR                  ambient mode (default: medium threshold)\nSIMILAR high             threshold preset  (high=0.78 / medium=0.68 / low=0.58)\nTHRESHOLD 0.72           exact cosine threshold\nLIMIT 8                  max results (default 10)\nLIVE                     bypass localStorage cache\nAUTHOR                   author mode — opens results as a ghost page\n```\n\nColons and extra whitespace are optional — `LIMIT: 8`, `LIMIT 8`, and `LIMIT:8` all work. Leave `text` empty for an interactive search form on the current domain."
     },
     {
       "type": "markdown",
       "id": "c0775c94a895e9d2",
+      "text": "## Modes"
+    },
+    {
+      "type": "markdown",
+      "id": "4f91a3b2d8e05c11",
+      "text": "**Search** (default) — an interactive form. Type a query; the plugin embeds it and scores all indexed pages by cosine similarity. Results appear inline as scored links.\n\n**Similar** — triggered by `SIMILAR` as the first command. Runs automatically on page load using the current page's pre-computed vector (no embed call if the page is already indexed). Displays a ranked *Similar Pages* list.\n\n**List** — triggered by `LIST`. Shows a table of all indexed domains on the farm with page counts. Supports glob patterns and `LIMIT` to filter the list.\n\n**Author** — triggered by `AUTHOR`. Runs the same search as Search mode but instead of showing results inline it opens a ghost page in the lineup containing:\n- `# Similar Pages` — deduplicated titles as `[[wiki links]]`\n- `# Reference Links` — all results as fedwiki reference items with site, slug, title, and score"
+    },
+    {
+      "type": "markdown",
+      "id": "c0775c94a895e9d3",
+      "text": "## Caching"
+    },
+    {
+      "type": "markdown",
+      "id": "9a1b2c3d4e5f6001",
+      "text": "Results are cached in `localStorage` keyed by item id and invalidated whenever the item's `text` changes. Add `LIVE` anywhere in the DSL to bypass the cache and always fetch fresh results."
+    },
+    {
+      "type": "markdown",
+      "id": "c0775c94a895e9d4",
       "text": "## How It Works"
     },
     {
       "type": "markdown",
       "id": "4b1bbe95544548eb",
-      "text": "Pages are pre-indexed as 384-dimensional embedding vectors using BAAI/bge-small-en-v1.5 via fastembed. The plugin loads `semantic-vectors.json` index files directly in the browser and scores them with cosine similarity in JavaScript — no remote search engine required.\n\nThe **similar** item type uses a fast path: if the current page is already indexed, its vector is reused directly without an embedding call. See [[Similarity Indexing]] for how to build and refresh indices."
+      "text": "Pages are pre-indexed as 384-dimensional embedding vectors using BAAI/bge-small-en-v1.5 via fastembed. The plugin loads `semantic-vectors.json` index files directly in the browser and scores them with cosine similarity in JavaScript — no remote search engine required.\n\nThe **similar** and **author** modes use a fast path: if the current page is already indexed, its vector is reused directly without an embedding call. See [[Similarity Indexing]] for how to build and refresh indices."
     }
   ],
   "journal": [
@@ -46,11 +66,11 @@
           {
             "type": "markdown",
             "id": "61ccb2d2cdb60c71",
-            "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. It ships two item types — **similarity** (an interactive search form) and **similar** (an ambient panel that automatically finds pages related to the one you are reading)."
+            "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm."
           }
         ]
       },
-      "date": 1781026832000,
+      "date": 1781046317000,
       "certificate": "from marvin"
     }
   ],
