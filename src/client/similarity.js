@@ -213,7 +213,7 @@ const STYLES = `
   .sim-flag { width:16px; height:16px; vertical-align:middle; margin-right:4px; }
   .sim-link { font-size:14px; color:#406; flex:1; }
   .sim-domain { font-size:11px; color:#999; }
-  .similar-results h3 { margin:4px 0 6px; font-size:14px; color:#555; }
+  .similar-results h3, .sim-list h3 { margin:4px 0 6px; font-size:14px; color:#555; }
   .similar-results ul { margin:0; padding-left:18px; }
   .similar-results li { font-size:14px; padding:2px 0; }
   .similar-results .sim-domain { margin-left:6px; }
@@ -302,8 +302,9 @@ export const bind = (div, item) => {
         const countNote = shown.length < allDomains.length
           ? `showing ${shown.length} of ${allDomains.length}`
           : `${allDomains.length} domains`
-        status.textContent = `${countNote} — ${totalPages.toLocaleString()} pages`
-        listDiv.innerHTML = `<table>
+        status.style.display = 'none'
+        listDiv.innerHTML = `<h3>Indexed Farm Domains</h3>
+        <table>
           <tr><th>Domain</th><th>Pages</th></tr>
           ${shown.map(({ domain, page_count }) => `
             <tr>
@@ -311,7 +312,8 @@ export const bind = (div, item) => {
                        title="${domain}" data-site="${domain}"> ${domain}</td>
               <td>${page_count != null ? page_count.toLocaleString() : '—'}</td>
             </tr>`).join('')}
-        </table>`
+        </table>
+        <p class="sim-count">${countNote} — ${totalPages.toLocaleString()} pages</p>`
       } catch (e) {
         status.textContent = `Error: ${e.message}`
       }
@@ -353,7 +355,7 @@ export const bind = (div, item) => {
           scored.map(({ domain, slug, title, score }) =>
             `<li>${simLink(domain, slug, title, score)}</li>`).join('')
         }</ul><p class="sim-count">${scored.length} found ${scopeLabel}</p>`
-        status.textContent = ''
+        status.style.display = 'none'
       } catch (e) {
         status.textContent = `Error: ${e.message}`
       }
