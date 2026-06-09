@@ -10,26 +10,27 @@ const DEFAULT_LIMIT      = 10
 const parseDSL = text => {
   const specs = []
   let threshold = null, limit = null, mode = 'search'
-  const val = (line, keyword) => line.slice(keyword.length).replace(/^\s*:?\s*/, '').trim()
+  const isCmd = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
+  const val   = (line, kw) => line.slice(kw.length).replace(/^\s*:?\s*/, '').trim()
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
     const upper = line.toUpperCase()
-    if (upper === 'LIST' || upper.startsWith('LIST ') || upper.startsWith('LIST:')) {
+    if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
     }
-    if (upper.startsWith('SIMILAR')) {
+    if (isCmd(upper, 'SIMILAR')) {
       const level = val(upper, 'SIMILAR').toLowerCase()
-      threshold = SIMILAR_THRESHOLDS[level] ?? DEFAULT_THRESHOLD
+      threshold = SIMILAR_THRESHOLDS[level] || DEFAULT_THRESHOLD
       if (!specs.length && mode === 'search') mode = 'similar'
       continue
     }
-    if (upper.startsWith('THRESHOLD')) {
+    if (isCmd(upper, 'THRESHOLD')) {
       threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD
       continue
     }
-    if (upper.startsWith('LIMIT')) {
+    if (isCmd(upper, 'LIMIT')) {
       limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT
       continue
     }
@@ -80,6 +81,19 @@ describe('parseDSL — thresholds', () => {
 describe('parseDSL — limit', () => {
   it('LIMIT: 5 parsed', () => assert.equal(parseDSL('LIMIT: 5').limit, 5))
   it('default limit is 10', () => assert.equal(parseDSL('david.*').limit, 10))
+})
+
+describe('parseDSL — bare commands default sensibly', () => {
+  it('bare SIMILAR triggers similar mode', () => assert.equal(parseDSL('SIMILAR').mode, 'similar'))
+  it('bare SIMILAR defaults to medium threshold', () => assert.equal(parseDSL('SIMILAR').threshold, 0.68))
+  it('bare LIMIT defaults to 10', () => assert.equal(parseDSL('LIMIT').limit, 10))
+  it('bare THRESHOLD defaults to medium', () => assert.equal(parseDSL('THRESHOLD').threshold, 0.68))
+  it('bare LIST triggers list mode', () => assert.equal(parseDSL('LIST').mode, 'list'))
+  it('domain starting with SIMILAR is not treated as command', () => {
+    const r = parseDSL('similarity.example.com')
+    assert.deepEqual(r.specs, ['similarity.example.com'])
+    assert.equal(r.mode, 'search')
+  })
 })
 
 describe('parseDSL — colon and whitespace tolerance', () => {

@@ -45,32 +45,35 @@ const parseDSL = text => {
   let limit     = null
   let mode      = 'search'  // default: interactive search form
 
-  // Extract the value after a keyword, tolerating optional colon and any whitespace.
-  // e.g. "LIMIT: 3", "LIMIT 3", "LIMIT:3" all return "3"
-  const val = (line, keyword) =>
-    line.slice(keyword.length).replace(/^\s*:?\s*/, '').trim()
+  // Match a keyword at the start of a line (case-insensitive), requiring it to
+  // be followed by end-of-string, whitespace, or colon — not by more word chars.
+  // This prevents domain specs like "similarity.example.com" matching SIMILAR.
+  const isCmd  = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
+  // Extract the value after the keyword, tolerating optional colon and whitespace.
+  // Returns '' for bare commands (e.g. "SIMILAR" alone), callers use their default.
+  const val    = (line, kw) => line.slice(kw.length).replace(/^\s*:?\s*/, '').trim()
 
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
 
     const upper = line.toUpperCase()
-    if (upper === 'LIST' || upper.startsWith('LIST ') || upper.startsWith('LIST:')) {
+    if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
     }
-    if (upper.startsWith('SIMILAR')) {
+    if (isCmd(upper, 'SIMILAR')) {
       const level = val(upper, 'SIMILAR').toLowerCase()
-      threshold = SIMILAR_THRESHOLDS[level] ?? DEFAULT_THRESHOLD
+      threshold = SIMILAR_THRESHOLDS[level] || DEFAULT_THRESHOLD  // '' → medium
       if (!specs.length && mode === 'search') mode = 'similar'
       continue
     }
-    if (upper.startsWith('THRESHOLD')) {
-      threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD
+    if (isCmd(upper, 'THRESHOLD')) {
+      threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD  // '' → medium
       continue
     }
-    if (upper.startsWith('LIMIT')) {
-      limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT
+    if (isCmd(upper, 'LIMIT')) {
+      limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT  // '' → 10
       continue
     }
     // Anything else is a domain spec (glob or explicit domain)
