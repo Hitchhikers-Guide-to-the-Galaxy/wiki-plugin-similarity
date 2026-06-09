@@ -75,7 +75,8 @@ const parseDSL = text => {
       continue
     }
     if (isCmd(upper, 'THRESHOLD')) {
-      threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD  // '' → medium
+      const tv = val(line, 'THRESHOLD')
+      threshold = SIMILAR_THRESHOLDS[tv.toLowerCase()] ?? (parseFloat(tv) || DEFAULT_THRESHOLD)
       continue
     }
     if (isCmd(upper, 'LIMIT')) {
@@ -327,7 +328,10 @@ export const bind = (div, item) => {
   const status  = div.find('.sim-status')[0]
   const cache   = live ? null : readCache(item)
 
-  div.on('dblclick', () => window.wiki.textEditor(div, item))
+  div.on('dblclick', e => {
+    if ($(e.target).closest('.sim-input').length) return
+    window.wiki.textEditor(div, item)
+  })
   div.on('click', '.sim-link', function (e) {
     e.preventDefault()
     const $a = $(this)

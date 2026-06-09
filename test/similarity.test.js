@@ -32,7 +32,8 @@ const parseDSL = text => {
       continue
     }
     if (isCmd(upper, 'THRESHOLD')) {
-      threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD
+      const tv = val(line, 'THRESHOLD')
+      threshold = SIMILAR_THRESHOLDS[tv.toLowerCase()] ?? (parseFloat(tv) || DEFAULT_THRESHOLD)
       continue
     }
     if (isCmd(upper, 'LIMIT')) {
@@ -76,6 +77,9 @@ describe('parseDSL — thresholds', () => {
   it('SIMILAR: medium maps to 0.68', () => assert.equal(parseDSL('SIMILAR: medium').threshold, 0.68))
   it('SIMILAR: low maps to 0.58', () => assert.equal(parseDSL('SIMILAR: low').threshold, 0.58))
   it('THRESHOLD: exact value', () => assert.equal(parseDSL('THRESHOLD: 0.72').threshold, 0.72))
+  it('THRESHOLD low maps to 0.58', () => assert.equal(parseDSL('THRESHOLD low').threshold, 0.58))
+  it('THRESHOLD medium maps to 0.68', () => assert.equal(parseDSL('THRESHOLD medium').threshold, 0.68))
+  it('THRESHOLD high maps to 0.78', () => assert.equal(parseDSL('THRESHOLD high').threshold, 0.78))
   it('default threshold is medium (0.68)', () => assert.equal(parseDSL('david.*').threshold, 0.68))
   it('threshold after domain specs', () => {
     assert.equal(parseDSL('david.*\nTHRESHOLD: 0.75').threshold, 0.75)
