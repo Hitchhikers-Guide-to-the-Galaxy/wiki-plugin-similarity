@@ -445,7 +445,7 @@ export const bind = (div, item) => {
       try {
         const qVec = await getEmbedding(query, origin)
         const scored = cosineScan(qVec, domainEntries,
-          { threshold: 0, limit, excludeSlug: null, excludeDomain: null })
+          { threshold, limit, excludeSlug: null, excludeDomain: null })
         results.innerHTML = scored.map(({ domain, slug, title, score }) =>
           `<div class="sim-result">${simLink(domain, slug, title, score)}</div>`).join('') +
           `<p class="sim-count">Top ${scored.length} for "${query}"</p>`
