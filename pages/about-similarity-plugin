@@ -1,0 +1,53 @@
+{
+  "title": "About Similarity Plugin",
+  "story": [
+    {
+      "type": "markdown",
+      "id": "61ccb2d2cdb60c71",
+      "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. It ships two item types — **similarity** (an interactive search form) and **similar** (an ambient panel that automatically finds pages related to the one you are reading)."
+    },
+    {
+      "type": "similarity",
+      "id": "ad3c41667c285efd",
+      "text": "SIMILAR: medium\nLIMIT: 5"
+    },
+    {
+      "type": "markdown",
+      "id": "bdf93e3860d64ebb",
+      "text": "## Domain DSL"
+    },
+    {
+      "type": "markdown",
+      "id": "0d628d43edf9f8e8",
+      "text": "The item's `text` field configures which domains to search and how similar results must be:\n\n```\n*                        all indexed domains on this server\ndavid.*                  glob pattern\ndavid.hitchhikers.earth  explicit domain\n# comment                ignored\n---\nSIMILAR: high            threshold preset  (high=0.78 / medium=0.68 / low=0.58)\nTHRESHOLD: 0.72          exact cosine threshold\nLIMIT: 8                 max results (default 10)\n```\n\nLeave `text` empty to search the current domain at the default medium threshold."
+    },
+    {
+      "type": "markdown",
+      "id": "c0775c94a895e9d2",
+      "text": "## How It Works"
+    },
+    {
+      "type": "markdown",
+      "id": "4b1bbe95544548eb",
+      "text": "Pages are pre-indexed as 384-dimensional embedding vectors using BAAI/bge-small-en-v1.5 via fastembed. The plugin loads `semantic-vectors.json` index files directly in the browser and scores them with cosine similarity in JavaScript — no remote search engine required.\n\nThe **similar** item type uses a fast path: if the current page is already indexed, its vector is reused directly without an embedding call. See [[Similarity Indexing]] for how to build and refresh indices."
+    }
+  ],
+  "journal": [
+    {
+      "type": "create",
+      "item": {
+        "title": "About Similarity Plugin",
+        "story": [
+          {
+            "type": "markdown",
+            "id": "61ccb2d2cdb60c71",
+            "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. It ships two item types — **similarity** (an interactive search form) and **similar** (an ambient panel that automatically finds pages related to the one you are reading)."
+          }
+        ]
+      },
+      "date": 1781026832000,
+      "certificate": "from marvin"
+    }
+  ],
+  "plugin": "similarity"
+}
