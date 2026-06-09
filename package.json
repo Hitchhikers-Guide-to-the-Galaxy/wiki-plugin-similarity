@@ -1,6 +1,6 @@
 {
   "name": "wiki-plugin-similarity",
-  "version": "0.1.10",
+  "version": "0.2.0",
   "description": "Federated Wiki plugin — semantic similarity search across wiki domains using prebuilt vector indexes",
   "keywords": [
     "wiki",
