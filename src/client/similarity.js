@@ -45,29 +45,32 @@ const parseDSL = text => {
   let limit     = null
   let mode      = 'search'  // default: interactive search form
 
+  // Extract the value after a keyword, tolerating optional colon and any whitespace.
+  // e.g. "LIMIT: 3", "LIMIT 3", "LIMIT:3" all return "3"
+  const val = (line, keyword) =>
+    line.slice(keyword.length).replace(/^\s*:?\s*/, '').trim()
+
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
 
     const upper = line.toUpperCase()
-    if (upper === 'LIST' || upper.startsWith('LIST ')) {
-      // LIST as first meaningful line → domain listing mode
+    if (upper === 'LIST' || upper.startsWith('LIST ') || upper.startsWith('LIST:')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
     }
-    if (upper.startsWith('SIMILAR:')) {
-      const level = line.split(':')[1].trim().toLowerCase()
+    if (upper.startsWith('SIMILAR')) {
+      const level = val(upper, 'SIMILAR').toLowerCase()
       threshold = SIMILAR_THRESHOLDS[level] ?? DEFAULT_THRESHOLD
-      // SIMILAR: as the first meaningful line → ambient mode
       if (!specs.length && mode === 'search') mode = 'similar'
       continue
     }
-    if (upper.startsWith('THRESHOLD:')) {
-      threshold = parseFloat(line.split(':')[1]) || DEFAULT_THRESHOLD
+    if (upper.startsWith('THRESHOLD')) {
+      threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD
       continue
     }
-    if (upper.startsWith('LIMIT:')) {
-      limit = parseInt(line.split(':')[1]) || DEFAULT_LIMIT
+    if (upper.startsWith('LIMIT')) {
+      limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT
       continue
     }
     // Anything else is a domain spec (glob or explicit domain)

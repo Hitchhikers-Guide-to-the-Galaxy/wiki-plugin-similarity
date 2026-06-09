@@ -9,28 +9,33 @@ const DEFAULT_LIMIT      = 10
 
 const parseDSL = text => {
   const specs = []
-  let threshold = null, limit = null, inParams = false
+  let threshold = null, limit = null, mode = 'search'
+  const val = (line, keyword) => line.slice(keyword.length).replace(/^\s*:?\s*/, '').trim()
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
-    if (line === '---') { inParams = true; continue }
     const upper = line.toUpperCase()
-    if (upper.startsWith('SIMILAR:')) {
-      const level = line.split(':')[1].trim().toLowerCase()
+    if (upper === 'LIST' || upper.startsWith('LIST ') || upper.startsWith('LIST:')) {
+      if (!specs.length && mode === 'search') mode = 'list'
+      continue
+    }
+    if (upper.startsWith('SIMILAR')) {
+      const level = val(upper, 'SIMILAR').toLowerCase()
       threshold = SIMILAR_THRESHOLDS[level] ?? DEFAULT_THRESHOLD
-      inParams = true; continue
+      if (!specs.length && mode === 'search') mode = 'similar'
+      continue
     }
-    if (upper.startsWith('THRESHOLD:')) {
-      threshold = parseFloat(line.split(':')[1]) || DEFAULT_THRESHOLD
-      inParams = true; continue
+    if (upper.startsWith('THRESHOLD')) {
+      threshold = parseFloat(val(line, 'THRESHOLD')) || DEFAULT_THRESHOLD
+      continue
     }
-    if (upper.startsWith('LIMIT:')) {
-      limit = parseInt(line.split(':')[1]) || DEFAULT_LIMIT
-      inParams = true; continue
+    if (upper.startsWith('LIMIT')) {
+      limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT
+      continue
     }
-    if (!inParams) specs.push(line)
+    specs.push(line)
   }
-  return { specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT }
+  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
@@ -66,9 +71,9 @@ describe('parseDSL — thresholds', () => {
   it('SIMILAR: low maps to 0.58', () => assert.equal(parseDSL('SIMILAR: low').threshold, 0.58))
   it('THRESHOLD: exact value', () => assert.equal(parseDSL('THRESHOLD: 0.72').threshold, 0.72))
   it('default threshold is medium (0.68)', () => assert.equal(parseDSL('david.*').threshold, 0.68))
-  it('threshold after --- separator', () => {
-    assert.equal(parseDSL('david.*\n---\nTHRESHOLD: 0.75').threshold, 0.75)
-    assert.deepEqual(parseDSL('david.*\n---\nTHRESHOLD: 0.75').specs, ['david.*'])
+  it('threshold after domain specs', () => {
+    assert.equal(parseDSL('david.*\nTHRESHOLD: 0.75').threshold, 0.75)
+    assert.deepEqual(parseDSL('david.*\nTHRESHOLD: 0.75').specs, ['david.*'])
   })
 })
 
@@ -77,12 +82,25 @@ describe('parseDSL — limit', () => {
   it('default limit is 10', () => assert.equal(parseDSL('david.*').limit, 10))
 })
 
+describe('parseDSL — colon and whitespace tolerance', () => {
+  it('LIMIT 5 (no colon)', () => assert.equal(parseDSL('LIMIT 5').limit, 5))
+  it('LIMIT:5 (no space)', () => assert.equal(parseDSL('LIMIT:5').limit, 5))
+  it('LIMIT  :  5 (extra spaces)', () => assert.equal(parseDSL('LIMIT  :  5').limit, 5))
+  it('THRESHOLD 0.72 (no colon)', () => assert.equal(parseDSL('THRESHOLD 0.72').threshold, 0.72))
+  it('THRESHOLD:0.72 (no space)', () => assert.equal(parseDSL('THRESHOLD:0.72').threshold, 0.72))
+  it('SIMILAR high (no colon)', () => assert.equal(parseDSL('SIMILAR high').threshold, 0.78))
+  it('SIMILAR:high (no space)', () => assert.equal(parseDSL('SIMILAR:high').threshold, 0.78))
+  it('LIST (no colon) triggers list mode', () => assert.equal(parseDSL('LIST').mode, 'list'))
+  it('LIST: (with colon) triggers list mode', () => assert.equal(parseDSL('LIST:').mode, 'list'))
+  it('trailing whitespace on line ignored', () => assert.equal(parseDSL('LIMIT: 5   ').limit, 5))
+})
+
 describe('parseDSL — params do not bleed into specs', () => {
   it('SIMILAR line not in specs', () => {
     assert.deepEqual(parseDSL('david.*\nSIMILAR: high').specs, ['david.*'])
   })
-  it('lines after --- not in specs', () => {
-    assert.deepEqual(parseDSL('david.*\n---\nLIMIT: 5').specs, ['david.*'])
+  it('LIMIT line not in specs', () => {
+    assert.deepEqual(parseDSL('david.*\nLIMIT: 5').specs, ['david.*'])
   })
 })
 
