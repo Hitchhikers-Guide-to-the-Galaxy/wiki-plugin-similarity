@@ -8,14 +8,16 @@
 //   *.fish                    glob pattern
 //   david.hitchhikers.earth   explicit domain name
 //   # comment                 ignored
+//   LIST                      list indexed domains (mode directive)
 //   SIMILAR: high             threshold preset AND ambient mode trigger
 //   THRESHOLD: 0.72           exact cosine threshold (overrides SIMILAR:)
 //   LIMIT: 8                  max results shown (default 10)
 //
-// Mode is determined by DSL (Ward's ALL-CAPS convention):
-//   SIMILAR: as the FIRST meaningful line → ambient mode (no search form;
-//     the item automatically finds pages similar to the current page)
-//   Domain specs first, or empty text → search form mode (user types query)
+// Mode is determined by the FIRST meaningful line (Ward's ALL-CAPS convention):
+//   LIST     → show a table of all indexed domains and their page counts;
+//              optional glob patterns on subsequent lines filter the list
+//   SIMILAR: → ambient mode — automatically find pages similar to this page
+//   (other)  → search form mode — user types a query, results appear
 //
 // Server endpoints required:
 //   GET  /system/indexed-domains.json?pattern=glob1,glob2
@@ -48,6 +50,11 @@ const parseDSL = text => {
     if (!line || line.startsWith('#')) continue
 
     const upper = line.toUpperCase()
+    if (upper === 'LIST' || upper.startsWith('LIST ')) {
+      // LIST as first meaningful line → domain listing mode
+      if (!specs.length && mode === 'search') mode = 'list'
+      continue
+    }
     if (upper.startsWith('SIMILAR:')) {
       const level = line.split(':')[1].trim().toLowerCase()
       threshold = SIMILAR_THRESHOLDS[level] ?? DEFAULT_THRESHOLD
@@ -63,7 +70,7 @@ const parseDSL = text => {
       limit = parseInt(line.split(':')[1]) || DEFAULT_LIMIT
       continue
     }
-    // Anything else is a domain spec
+    // Anything else is a domain spec (glob or explicit domain)
     specs.push(line)
   }
 
@@ -204,6 +211,12 @@ const STYLES = `
   .similar-results ul { margin:0; padding-left:18px; }
   .similar-results li { font-size:14px; padding:2px 0; }
   .similar-results .sim-domain { margin-left:6px; }
+  .sim-list table { border-collapse:collapse; width:100%; font-size:13px; }
+  .sim-list th { text-align:left; font-size:11px; color:#888; padding:2px 8px 4px 0;
+                 border-bottom:1px solid #ddd; }
+  .sim-list td { padding:3px 8px 3px 0; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+  .sim-list td:last-child { text-align:right; color:#999; font-size:11px; }
+  .sim-list .sim-flag { margin-right:6px; }
 `
 
 const siteFlag = (domain, score) =>
@@ -219,7 +232,15 @@ const simLink = (domain, slug, title, score) =>
 
 export const emit = (div, item) => {
   const { mode, specs, threshold, limit } = parseDSL(item?.text || '')
-  if (mode === 'similar') {
+  if (mode === 'list') {
+    const label = specs.length ? specs.join(', ') : '*'
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}">
+        <div class="sim-status">Loading indexed domains (${label})…</div>
+        <div class="sim-list"></div>
+      </div>`)
+  } else if (mode === 'similar') {
     const label = specs.length ? specs.join(', ') : 'current domain'
     div.html(`
       <style>${STYLES}</style>
@@ -246,7 +267,6 @@ export const bind = (div, item) => {
   const { mode, specs, threshold, limit } = parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
-  const results = div.find('.sim-results')[0]
 
   div.on('dblclick', () => window.wiki.textEditor(div, item))
 
@@ -256,7 +276,37 @@ export const bind = (div, item) => {
     window.wiki.doInternalLink($a.data('title'), div.parents('.page'), $a.data('site'))
   })
 
-  if (mode === 'similar') {
+  if (mode === 'list') {
+    // List all indexed domains matching the spec patterns (default: all)
+    const listDiv = div.find('.sim-list')[0]
+    const patterns = specs.length ? specs.join(',') : '*'
+    const run = async () => {
+      try {
+        const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}`
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`indexed-domains failed: ${res.status}`)
+        const domains = await res.json()
+        if (!domains.length) {
+          status.textContent = 'No indexed domains found'
+          return
+        }
+        const totalPages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
+        status.textContent = `${domains.length} domains — ${totalPages.toLocaleString()} pages`
+        listDiv.innerHTML = `<table>
+          <tr><th>Domain</th><th>Pages</th></tr>
+          ${domains.map(({ domain, page_count }) => `
+            <tr>
+              <td><img class="sim-flag remote" src="${window.wiki.site(domain).flag()}"
+                       title="${domain}" data-site="${domain}"> ${domain}</td>
+              <td>${page_count != null ? page_count.toLocaleString() : '—'}</td>
+            </tr>`).join('')}
+        </table>`
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      }
+    }
+    run()
+  } else if (mode === 'similar') {
     // Ambient mode — run automatically, no search form
     const run = async () => {
       try {
@@ -284,6 +334,7 @@ export const bind = (div, item) => {
           status.textContent = `No similar pages found above threshold ${threshold}`
           return
         }
+        const results = div.find('.sim-results')[0]
         results.innerHTML = `<h3>Similar Pages</h3><ul>${
           scored.map(({ domain, slug, title, score }) =>
             `<li>${simLink(domain, slug, title, score)}</li>`).join('')
@@ -296,8 +347,9 @@ export const bind = (div, item) => {
     run()
   } else {
     // Search form mode — preload domains, then wait for user input
-    const input = div.find('.sim-input')[0]
-    const btn   = div.find('.sim-btn')[0]
+    const input   = div.find('.sim-input')[0]
+    const btn     = div.find('.sim-btn')[0]
+    const results = div.find('.sim-results')[0]
     let domainEntries = null
 
     const preload = async () => {
