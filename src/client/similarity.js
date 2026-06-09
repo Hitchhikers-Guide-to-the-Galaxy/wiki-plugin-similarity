@@ -143,8 +143,9 @@ const vectorUrl = domain => {
     // Route through our local server — serves any farm domain from disk
     return `${window.location.origin}/system/semantic-vectors.json?domain=${encodeURIComponent(domain)}`
   }
-  // On a real server, fetch directly from the remote wiki
-  return `http://${domain}/system/semantic-vectors.json`
+  // On a real server, fetch directly from the remote wiki — use same protocol
+  // as the current page to avoid mixed-content blocks on HTTPS sites
+  return `${window.location.protocol}//${domain}/system/semantic-vectors.json`
 }
 
 const loadVectors = async domain => {
