@@ -208,10 +208,10 @@ const STYLES = `
   .sim-link { font-size:14px; color:#406; flex:1; }
   .sim-domain { font-size:11px; color:#999; }
   .similar-results h3 { margin:4px 0 6px; font-size:14px; color:#555; }
-  .similar-results h3 small { font-size:12px; color:#888; font-weight:normal; margin-left:6px; }
   .similar-results ul { margin:0; padding-left:18px; }
   .similar-results li { font-size:14px; padding:2px 0; }
   .similar-results .sim-domain { margin-left:6px; }
+  .sim-count { font-size:12px; color:#888; margin:4px 0 0; }
   .sim-list table { border-collapse:collapse; width:100%; font-size:13px; }
   .sim-list th { text-align:left; font-size:11px; color:#888; padding:2px 8px 4px 0;
                  border-bottom:1px solid #ddd; }
@@ -335,11 +335,14 @@ export const bind = (div, item) => {
           status.textContent = `No similar pages found above threshold ${threshold}`
           return
         }
+        const scopeLabel = !specs.length || (specs.length === 1 && specs[0] === '*')
+          ? 'on farm'
+          : specs.length === 1 ? `on ${specs[0]}` : 'in domains'
         const results = div.find('.sim-results')[0]
-        results.innerHTML = `<h3>Similar Pages <small>${scored.length} found</small></h3><ul>${
+        results.innerHTML = `<h3>Similar Pages</h3><ul>${
           scored.map(({ domain, slug, title, score }) =>
             `<li>${simLink(domain, slug, title, score)}</li>`).join('')
-        }</ul>`
+        }</ul><p class="sim-count">${scored.length} found ${scopeLabel}</p>`
         status.textContent = ''
       } catch (e) {
         status.textContent = `Error: ${e.message}`
