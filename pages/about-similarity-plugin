@@ -4,7 +4,12 @@
     {
       "type": "markdown",
       "id": "61ccb2d2cdb60c71",
-      "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. It ships two item types — **similarity** (an interactive search form) and **similar** (an ambient panel that automatically finds pages related to the one you are reading)."
+      "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. One item type — **similarity** — with behaviour controlled by a DSL: interactive search form by default, ambient similar-pages panel when `SIMILAR` is the first line."
+    },
+    {
+      "type": "markdown",
+      "id": "a3f7c8d2e1b94056",
+      "text": "**Version:** 0.1.7 — [GitHub](https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity) · [npm](https://www.npmjs.com/package/wiki-plugin-similarity)"
     },
     {
       "type": "similarity",
@@ -19,7 +24,7 @@
     {
       "type": "markdown",
       "id": "0d628d43edf9f8e8",
-      "text": "The item's `text` field configures which domains to search and how similar results must be:\n\n```\n*                        all indexed domains on this server\ndavid.*                  glob pattern\ndavid.hitchhikers.earth  explicit domain\n# comment                ignored\n---\nSIMILAR: high            threshold preset  (high=0.78 / medium=0.68 / low=0.58)\nTHRESHOLD: 0.72          exact cosine threshold\nLIMIT: 8                 max results (default 10)\n```\n\nLeave `text` empty to search the current domain at the default medium threshold."
+      "text": "The item's `text` field configures which domains to search and how:\n\n```\n*                        all indexed domains on this server\ndavid.*                  glob pattern\ndavid.hitchhikers.earth  explicit domain\n# comment                ignored\nLIST                     show a table of indexed domains\nSIMILAR                  ambient mode (default: medium threshold)\nSIMILAR high             threshold preset  (high=0.78 / medium=0.68 / low=0.58)\nTHRESHOLD 0.72           exact cosine threshold\nLIMIT 8                  max results (default 10)\n```\n\nColons and extra whitespace are optional — `LIMIT: 8`, `LIMIT 8`, and `LIMIT:8` all work. Leave `text` empty for an interactive search form on the current domain."
     },
     {
       "type": "markdown",
