@@ -292,16 +292,20 @@ export const bind = (div, item) => {
         const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}`
         const res = await fetch(url)
         if (!res.ok) throw new Error(`indexed-domains failed: ${res.status}`)
-        const domains = await res.json()
-        if (!domains.length) {
+        const allDomains = await res.json()
+        if (!allDomains.length) {
           status.textContent = 'No indexed domains found'
           return
         }
-        const totalPages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
-        status.textContent = `${domains.length} domains — ${totalPages.toLocaleString()} pages`
+        const shown = allDomains.slice(0, limit)
+        const totalPages = allDomains.reduce((n, d) => n + (d.page_count || 0), 0)
+        const countNote = shown.length < allDomains.length
+          ? `showing ${shown.length} of ${allDomains.length}`
+          : `${allDomains.length} domains`
+        status.textContent = `${countNote} — ${totalPages.toLocaleString()} pages`
         listDiv.innerHTML = `<table>
           <tr><th>Domain</th><th>Pages</th></tr>
-          ${domains.map(({ domain, page_count }) => `
+          ${shown.map(({ domain, page_count }) => `
             <tr>
               <td><img class="sim-flag remote" src="${window.wiki.site(domain).flag()}"
                        title="${domain}" data-site="${domain}"> ${domain}</td>
