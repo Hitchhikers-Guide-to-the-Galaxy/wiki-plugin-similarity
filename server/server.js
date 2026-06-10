@@ -51,8 +51,41 @@ const globMatch = (pattern, str) => {
   return dp[p][s]
 }
 
-const matchesAny = (domain, patterns) =>
-  patterns.some(p => p === '*' || globMatch(p, domain))
+// Scope keywords (exact uppercase, per DSL convention):
+//   *        all farms
+//   PUBLIC   domains in the extra farms (Nextcloud mirror)
+//   LOCAL    domains in the primary (localhost) farm
+//   PRIVATE  public domains marked "restricted": true in the farm config
+
+// Collect restricted domains from config-*.json files at each public farm root
+const loadRestricted = () => {
+  const restricted = new Set()
+  for (const farm of EXTRA_FARMS) {
+    let files
+    try { files = fs.readdirSync(farm) } catch { continue }
+    for (const f of files) {
+      if (!/^config-.*\.json$/.test(f)) continue
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(farm, f), 'utf8'))
+        for (const [domain, opts] of Object.entries(cfg.wikiDomains || {})) {
+          if (opts && opts.restricted) restricted.add(domain)
+        }
+      } catch { /* ignore malformed config */ }
+    }
+  }
+  return restricted
+}
+const RESTRICTED = loadRestricted()
+
+// kind: 'local' for the primary farm, 'public' for extra farms
+const matchesAny = (domain, kind, patterns) =>
+  patterns.some(p => {
+    if (p === '*') return true
+    if (p === 'PUBLIC') return kind === 'public'
+    if (p === 'LOCAL') return kind === 'local'
+    if (p === 'PRIVATE') return kind === 'public' && RESTRICTED.has(domain)
+    return globMatch(p, domain)
+  })
 
 // ── Multi-farm helpers ────────────────────────────────────────────────────────
 
@@ -70,11 +103,12 @@ const findInFarms = (farmRoot, domain, relPath) => {
 // ── Discover indexed domains ───────────────────────────────────────────────────
 
 const findIndexedDomains = (farmRoot, patterns) => {
-  const farms = [farmRoot, ...EXTRA_FARMS]
+  // primary farm is 'local'; extra farms (Nextcloud mirror) are 'public'
+  const farms = [[farmRoot, 'local'], ...EXTRA_FARMS.map(f => [f, 'public'])]
   const seen  = new Set()
   const results = []
 
-  for (const farm of farms) {
+  for (const [farm, kind] of farms) {
     let entries
     try { entries = fs.readdirSync(farm, { withFileTypes: true }) } catch { continue }
 
@@ -82,7 +116,7 @@ const findIndexedDomains = (farmRoot, patterns) => {
       if (!ent.isDirectory()) continue
       const domain = ent.name
       if (seen.has(domain)) continue          // first farm wins
-      if (!matchesAny(domain, patterns)) continue
+      if (!matchesAny(domain, kind, patterns)) continue
       const vecFile = path.join(farm, domain, 'status', 'semantic-vectors.json')
       try { fs.accessSync(vecFile, fs.constants.F_OK) } catch { continue }
       seen.add(domain)

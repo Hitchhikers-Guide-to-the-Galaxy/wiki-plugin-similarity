@@ -45,6 +45,9 @@ const parseDSL = text => {
   let limit     = null
   let mode      = 'search'  // default: interactive search form
   let live      = false     // default: cache results in localStorage
+  let force     = false     // BUILD mode: re-embed even when index is fresh
+  let ghostUrl  = null      // GHOST mode: page-json URL to open as a ghost page
+  let label     = null      // BUTTON: custom button caption (GHOST / BUILD modes)
 
   // Match a keyword at the start of a line (case-insensitive), requiring it to
   // be followed by end-of-string, whitespace, or colon — not by more word chars.
@@ -64,6 +67,21 @@ const parseDSL = text => {
       if (!specs.length && mode === 'search') mode = 'author'
       continue
     }
+    if (isCmd(upper, 'REPORT')) {
+      if (mode === 'search') mode = 'report'
+      continue
+    }
+    if (isCmd(upper, 'BUILD')) {
+      if (mode === 'search') mode = 'build'
+      continue
+    }
+    if (isCmd(upper, 'FORCE')) { force = true; continue }
+    if (isCmd(upper, 'GHOST')) {
+      ghostUrl = val(line, 'GHOST')
+      if (mode === 'search') mode = 'ghost'
+      continue
+    }
+    if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -83,8 +101,8 @@ const parseDSL = text => {
       limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT  // '' → 10
       continue
     }
-    // Anything else is a domain spec (glob or explicit domain)
-    specs.push(line)
+    // Anything else is a domain spec (glob, explicit domain, or scope keyword)
+    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
   }
 
   return {
@@ -93,10 +111,17 @@ const parseDSL = text => {
     threshold: threshold ?? DEFAULT_THRESHOLD,
     limit:     limit     ?? DEFAULT_LIMIT,
     live,
+    force,
+    ghostUrl,
+    label,
   }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
+
+// Scope keywords expand server-side: PUBLIC (Nextcloud mirror farms),
+// LOCAL (primary farm), PRIVATE (public domains with restricted: true)
+const isScope = spec => spec === 'PUBLIC' || spec === 'LOCAL' || spec === 'PRIVATE'
 
 // ── Slug ──────────────────────────────────────────────────────────────────────
 
@@ -121,7 +146,7 @@ const resolveDomains = async (specs, origin) => {
   const seen = new Set()
   const result = []
   for (const spec of specs) {
-    if (spec === '*' || isGlob(spec)) {
+    if (spec === '*' || isGlob(spec) || isScope(spec)) {
       for (const item of await resolveDomainsForSpec(spec, origin)) {
         if (!seen.has(item.domain)) { seen.add(item.domain); result.push(item) }
       }
@@ -278,8 +303,26 @@ const simLink = (domain, slug, title, score) =>
   `${siteFlag(domain, score)} ${title}</a>`
 
 export const emit = (div, item) => {
-  const { mode, specs, threshold, limit } = parseDSL(item?.text || '')
-  if (mode === 'list') {
+  const { mode, specs, threshold, limit, force, ghostUrl, label } = parseDSL(item?.text || '')
+  if (mode === 'ghost') {
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}">
+        <div class="sim-form">
+          <button class="sim-btn">${label || 'Open'}</button>
+        </div>
+        <div class="sim-status"></div>
+      </div>`)
+  } else if (mode === 'build') {
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}">
+        <div class="sim-form">
+          <button class="sim-btn">${label || `Index ${specs.length ? specs.join(', ') : '*'}${force ? ' (force)' : ''}`}</button>
+        </div>
+        <div class="sim-status"></div>
+      </div>`)
+  } else if (mode === 'list') {
     const label = specs.length ? specs.join(', ') : '*'
     div.html(`
       <style>${STYLES}</style>
@@ -295,14 +338,15 @@ export const emit = (div, item) => {
         <div class="sim-status">Finding similar pages across ${label}…</div>
         <div class="sim-results"></div>
       </div>`)
-  } else if (mode === 'author') {
+  } else if (mode === 'author' || mode === 'report') {
     const label = specs.length ? specs.join(', ') : '(current domain)'
+    const btnLabel = mode === 'report' ? 'Report' : 'Author'
     div.html(`
       <style>${STYLES}</style>
       <div class="similarity" data-id="${item.id}">
         <div class="sim-form">
           <input class="sim-input" type="text" placeholder="Search wiki pages…" />
-          <button class="sim-btn">Author</button>
+          <button class="sim-btn">${btnLabel}</button>
         </div>
         <div class="sim-status">Domains: ${label}</div>
         <div class="sim-results"></div>
@@ -323,7 +367,7 @@ export const emit = (div, item) => {
 }
 
 export const bind = (div, item) => {
-  const { mode, specs, threshold, limit, live } = parseDSL(item?.text || '')
+  const { mode, specs, threshold, limit, live, force, ghostUrl } = parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
   const cache   = live ? null : readCache(item)
@@ -335,7 +379,9 @@ export const bind = (div, item) => {
   div.on('click', '.sim-link', function (e) {
     e.preventDefault()
     const $a = $(this)
-    window.wiki.doInternalLink($a.data('title'), div.parents('.page'), $a.data('site'))
+    // shift-click appends at the end of the lineup instead of truncating after this page
+    const $page = e.shiftKey ? null : div.parents('.page')
+    window.wiki.doInternalLink($a.data('title'), $page, $a.data('site'))
   })
 
   const scopeLabel = !specs.length || (specs.length === 1 && specs[0] === '*')
@@ -428,6 +474,84 @@ export const bind = (div, item) => {
         }
       })()
     }
+
+  } else if (mode === 'ghost') {
+    // Ghost mode — fetch page-json from any URL and open it as a ghost page
+    const btn = div.find('.sim-btn')[0]
+
+    const doGhost = async () => {
+      if (!ghostUrl) { status.textContent = 'No URL — GHOST needs a page-json URL'; return }
+      btn.disabled = true
+      status.textContent = 'Fetching…'
+      try {
+        const res = await fetch(ghostUrl)
+        if (!res.ok) throw new Error(`fetch failed: ${res.status}`)
+        const page = await res.json()
+        window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
+        status.textContent = ''
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    btn.addEventListener('click', doGhost)
+
+  } else if (mode === 'build') {
+    // Build mode — trigger a semantic index build; result opens as a ghost page
+    const btn = div.find('.sim-btn')[0]
+
+    const doBuild = async () => {
+      btn.disabled = true
+      status.textContent = 'Building index… (may take a while for large scopes)'
+      try {
+        const domains = encodeURIComponent((specs.length ? specs : ['*']).join(','))
+        const res = await fetch(
+          `http://api.localhost/build-index.json?domains=${domains}&force=${force ? 1 : 0}`)
+        if (!res.ok) throw new Error(`build-index failed: ${res.status}`)
+        const page = await res.json()
+        window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
+        status.textContent = ''
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    btn.addEventListener('click', doBuild)
+
+  } else if (mode === 'report') {
+    // Report mode — server-side ranked/bundled search, opens result as ghost page
+    const input = div.find('.sim-input')[0]
+    const btn   = div.find('.sim-btn')[0]
+
+    const doReport = async () => {
+      const query = input.value.trim()
+      if (!query) return
+      btn.disabled = true
+      status.textContent = 'Generating report…'
+      try {
+        const res = await fetch('http://localhost:8000/search-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, domains: specs.length ? specs : ['*'], limit }),
+        })
+        if (!res.ok) throw new Error(`search-report failed: ${res.status}`)
+        const page = await res.json()
+        const pageObj = window.wiki.newPage(page)
+        window.wiki.showResult(pageObj, { $page: div.parents('.page') })
+        status.textContent = ''
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    btn.addEventListener('click', doReport)
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doReport() })
 
   } else if (mode === 'author') {
     // Author mode — same search form but creates a ghost page from results

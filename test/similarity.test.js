@@ -9,7 +9,8 @@ const DEFAULT_LIMIT      = 10
 
 const parseDSL = text => {
   const specs = []
-  let threshold = null, limit = null, mode = 'search', live = false
+  let threshold = null, limit = null, mode = 'search', live = false, force = false
+  let ghostUrl = null, label = null
   const isCmd = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
   const val   = (line, kw) => line.slice(kw.length).replace(/^\s*:?\s*/, '').trim()
   for (const raw of text.split('\n')) {
@@ -21,6 +22,21 @@ const parseDSL = text => {
       if (!specs.length && mode === 'search') mode = 'author'
       continue
     }
+    if (isCmd(upper, 'REPORT')) {
+      if (mode === 'search') mode = 'report'
+      continue
+    }
+    if (isCmd(upper, 'BUILD')) {
+      if (mode === 'search') mode = 'build'
+      continue
+    }
+    if (isCmd(upper, 'FORCE')) { force = true; continue }
+    if (isCmd(upper, 'GHOST')) {
+      ghostUrl = val(line, 'GHOST')
+      if (mode === 'search') mode = 'ghost'
+      continue
+    }
+    if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -40,9 +56,9 @@ const parseDSL = text => {
       limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT
       continue
     }
-    specs.push(line)
+    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
   }
-  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live }
+  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, force, ghostUrl, label }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
@@ -99,6 +115,12 @@ describe('parseDSL — bare commands default sensibly', () => {
   it('bare THRESHOLD defaults to medium', () => assert.equal(parseDSL('THRESHOLD').threshold, 0.68))
   it('bare LIST triggers list mode', () => assert.equal(parseDSL('LIST').mode, 'list'))
   it('bare AUTHOR triggers author mode', () => assert.equal(parseDSL('AUTHOR').mode, 'author'))
+  it('bare REPORT triggers report mode', () => assert.equal(parseDSL('REPORT').mode, 'report'))
+  it('REPORT keeps domain specs for server', () => {
+    const r = parseDSL('REPORT\ndavid.*')
+    assert.equal(r.mode, 'report')
+    assert.deepEqual(r.specs, ['david.*'])
+  })
   it('AUTHOR with domain spec stays search mode', () => {
     const r = parseDSL('david.*\nAUTHOR')
     assert.equal(r.mode, 'search')
@@ -131,6 +153,41 @@ describe('parseDSL — params do not bleed into specs', () => {
   it('LIMIT line not in specs', () => {
     assert.deepEqual(parseDSL('david.*\nLIMIT: 5').specs, ['david.*'])
   })
+})
+
+describe('parseDSL — scope keywords', () => {
+  it('PUBLIC kept as spec', () => assert.deepEqual(parseDSL('PUBLIC').specs, ['PUBLIC']))
+  it('LOCAL kept as spec', () => assert.deepEqual(parseDSL('LOCAL').specs, ['LOCAL']))
+  it('PRIVATE kept as spec', () => assert.deepEqual(parseDSL('PRIVATE').specs, ['PRIVATE']))
+  it('lowercase private normalised to uppercase', () => assert.deepEqual(parseDSL('private').specs, ['PRIVATE']))
+  it('scope keywords do not change mode', () => assert.equal(parseDSL('PUBLIC').mode, 'search'))
+  it('mix of scope and glob', () => assert.deepEqual(parseDSL('LOCAL\ndavid.*').specs, ['LOCAL', 'david.*']))
+})
+
+describe('parseDSL — BUILD mode and FORCE flag', () => {
+  it('bare BUILD triggers build mode', () => assert.equal(parseDSL('BUILD').mode, 'build'))
+  it('BUILD with scope spec', () => {
+    const r = parseDSL('BUILD\nPRIVATE')
+    assert.equal(r.mode, 'build')
+    assert.deepEqual(r.specs, ['PRIVATE'])
+  })
+  it('FORCE sets force=true', () => assert.equal(parseDSL('BUILD\nFORCE').force, true))
+  it('default is not forced', () => assert.equal(parseDSL('BUILD').force, false))
+})
+
+describe('parseDSL — GHOST mode and LABEL', () => {
+  it('GHOST with url triggers ghost mode', () => {
+    const r = parseDSL('GHOST http://api.localhost/farm-rosters.json')
+    assert.equal(r.mode, 'ghost')
+    assert.equal(r.ghostUrl, 'http://api.localhost/farm-rosters.json')
+  })
+  it('GHOST: with colon works', () => {
+    assert.equal(parseDSL('GHOST: http://x/y.json').ghostUrl, 'http://x/y.json')
+  })
+  it('BUTTON sets button caption', () => {
+    assert.equal(parseDSL('GHOST http://x/y.json\nBUTTON Update Farm Rosters').label, 'Update Farm Rosters')
+  })
+  it('caption defaults to null', () => assert.equal(parseDSL('GHOST http://x/y.json').label, null))
 })
 
 describe('parseDSL — LIVE flag', () => {
