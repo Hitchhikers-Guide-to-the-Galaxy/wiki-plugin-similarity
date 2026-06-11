@@ -9,7 +9,7 @@
     {
       "type": "markdown",
       "id": "a3f7c8d2e1b94056",
-      "text": "**Version:** 0.4.0 — [GitHub](https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity) · [npm](https://www.npmjs.com/package/wiki-plugin-similarity)"
+      "text": "**Version:** 0.4.1 — [GitHub](https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity) · [npm](https://www.npmjs.com/package/wiki-plugin-similarity)"
     },
     {
       "type": "similarity",
@@ -44,7 +44,7 @@
     {
       "type": "markdown",
       "id": "4f91a3b2d8e05c11",
-      "text": "**Search** (default) — interactive form; results appear inline as scored links. Shift-click a result to append it at the end of the lineup instead of truncating.\n\n**Similar** — runs on page load using the current page's pre-computed vector (no embed call if already indexed). Ranked *Similar Pages* list.\n\n**List** — table of indexed domains with page counts; supports scopes, globs, and `LIMIT`.\n\n**Author** — same search, but opens a ghost page with `# Similar Pages` ([[wiki links]], deduplicated) and `# Reference Links` (all results as reference items with scores).\n\n**Report** — posts to the farm API's `/search-report`: candidates from semantic scan ∪ title matching, stubs dropped, forks and near-duplicates bundled under the strongest copy with a one-click lineup link, ranked by semantic × richness × recency + title boost. Opens as a ghost page. *(localhost only — needs the FastAPI service.)*\n\n**Build** — a button that triggers semantic index building via `/build-index.json`; the build report opens as a ghost page. Add `FORCE` to re-embed fresh domains. *(localhost only.)*\n\n**Ghost** — a generic button: `GHOST <url>` fetches any endpoint returning fedwiki page JSON and opens it as a ghost page. Caption set with `BUTTON <text>`."
+      "text": "**Search** (default) — interactive form; results appear inline as scored links. Shift-click a result to append it at the end of the lineup instead of truncating.\n\n**Similar** — runs on page load using the current page's pre-computed vector (no embed call if already indexed). Ranked *Similar Pages* list.\n\n**List** — table of indexed domains with page counts; supports scopes, globs, and `LIMIT`.\n\n**Author** — same search, but opens a ghost page with `# Similar Pages` ([[wiki links]], deduplicated) and `# Reference Links` (all results as reference items with scores).\n\n**Report** — posts to the farm API's `/search-report`: candidates from semantic scan ∪ title matching, stubs dropped, forks and near-duplicates bundled under the strongest copy with a one-click lineup link, ranked by semantic × richness × recency + title boost. Opens as a ghost page. *(localhost only — needs the FastAPI service.)*\n\n**Build** — a button that triggers semantic index building via `/build-index.json`; the build report opens as a ghost page. Add `FORCE` to re-embed fresh domains. *(localhost only.)*\n\n**Ghost** — a generic button: `GHOST <url>` fetches any endpoint returning fedwiki page JSON and opens it as a ghost page. Caption set with `BUTTON <text>`. Example: the *Farm Roster Report* button fetches `/farm-rosters.json`, which rosters every farm domain by scope with per-section error rosters for unserved domains."
     },
     {
       "type": "markdown",
