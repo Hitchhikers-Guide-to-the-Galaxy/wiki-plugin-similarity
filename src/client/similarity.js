@@ -114,6 +114,7 @@ const parseDSL = text => {
     force,
     ghostUrl,
     label,
+    thresholdSet: threshold !== null,  // explicit THRESHOLD/SIMILAR in the DSL
   }
 }
 
@@ -367,10 +368,21 @@ export const emit = (div, item) => {
 }
 
 export const bind = (div, item) => {
-  const { mode, specs, threshold, limit, live, force, ghostUrl } = parseDSL(item?.text || '')
+  const { mode, specs, threshold, limit, live, force, ghostUrl, thresholdSet } =
+    parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
   const cache   = live ? null : readCache(item)
+
+  // Standardised pre-search status: what will run, over how much, with what config.
+  // e.g. "Report ready — 18,583 pages across 267 domains · threshold 0.68 · limit 20 · LIVE"
+  const configSummary = (verb, pages, nDomains) => {
+    const parts = [`${verb} — ${pages.toLocaleString()} pages across ${nDomains} domains`]
+    if (thresholdSet) parts.push(`threshold ${threshold}`)
+    parts.push(`limit ${limit}`)
+    if (live) parts.push('LIVE')
+    return parts.join(' · ')
+  }
 
   div.on('dblclick', e => {
     if ($(e.target).closest('.sim-input').length) return
@@ -526,6 +538,20 @@ export const bind = (div, item) => {
     // Report mode — server-side ranked/bundled search, opens result as ghost page
     const input = div.find('.sim-input')[0]
     const btn   = div.find('.sim-btn')[0]
+    let readyLine = `Domains: ${specs.length ? specs.join(', ') : '*'}`
+
+    // Preload the lightweight domain listing (counts only, no vectors) so the
+    // status line shows scope and config before any search is issued.
+    ;(async () => {
+      try {
+        const domains = await resolveDomains(specs.length ? specs : ['*'], origin)
+        const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
+        readyLine = configSummary('Report ready', pages, domains.length)
+        status.textContent = readyLine
+      } catch (e) {
+        status.textContent = `Domain listing unavailable: ${e.message}`
+      }
+    })()
 
     const doReport = async () => {
       const query = input.value.trim()
@@ -533,16 +559,18 @@ export const bind = (div, item) => {
       btn.disabled = true
       status.textContent = 'Generating report…'
       try {
-        const res = await fetch('http://localhost:8000/search-report', {
+        const body = { query, domains: specs.length ? specs : ['*'], limit, live }
+        if (thresholdSet) body.threshold = threshold
+        const res = await fetch('http://api.localhost/search-report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, domains: specs.length ? specs : ['*'], limit }),
+          body: JSON.stringify(body),
         })
         if (!res.ok) throw new Error(`search-report failed: ${res.status}`)
         const page = await res.json()
         const pageObj = window.wiki.newPage(page)
         window.wiki.showResult(pageObj, { $page: div.parents('.page') })
-        status.textContent = ''
+        status.textContent = readyLine
       } catch (e) {
         status.textContent = `Error: ${e.message}`
       } finally {
@@ -565,7 +593,7 @@ export const bind = (div, item) => {
         if (!cache) status.textContent = 'Resolving domains…'
         domainEntries = await loadDomainEntries(specs, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-        status.textContent = `Ready — ${total.toLocaleString()} pages across ${domainEntries.length} domains`
+        status.textContent = configSummary('Author ready', total, domainEntries.length)
       } catch (e) {
         status.textContent = `Load error: ${e.message}`
       }
@@ -637,7 +665,7 @@ export const bind = (div, item) => {
         if (!cache) status.textContent = 'Resolving domains…'
         domainEntries = await loadDomainEntries(specs, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-        status.textContent = `Ready — ${total.toLocaleString()} pages across ${domainEntries.length} domains`
+        status.textContent = configSummary('Search ready', total, domainEntries.length)
       } catch (e) {
         status.textContent = `Load error: ${e.message}`
       }

@@ -58,7 +58,7 @@ const parseDSL = text => {
     }
     specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
   }
-  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, force, ghostUrl, label }
+  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, force, ghostUrl, label, thresholdSet: threshold !== null }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
@@ -97,6 +97,9 @@ describe('parseDSL — thresholds', () => {
   it('THRESHOLD medium maps to 0.68', () => assert.equal(parseDSL('THRESHOLD medium').threshold, 0.68))
   it('THRESHOLD high maps to 0.78', () => assert.equal(parseDSL('THRESHOLD high').threshold, 0.78))
   it('default threshold is medium (0.68)', () => assert.equal(parseDSL('david.*').threshold, 0.68))
+  it('thresholdSet false when defaulted', () => assert.equal(parseDSL('david.*').thresholdSet, false))
+  it('thresholdSet true when explicit', () => assert.equal(parseDSL('THRESHOLD 0.7').thresholdSet, true))
+  it('thresholdSet true via SIMILAR preset', () => assert.equal(parseDSL('SIMILAR low').thresholdSet, true))
   it('threshold after domain specs', () => {
     assert.equal(parseDSL('david.*\nTHRESHOLD: 0.75').threshold, 0.75)
     assert.deepEqual(parseDSL('david.*\nTHRESHOLD: 0.75').specs, ['david.*'])
