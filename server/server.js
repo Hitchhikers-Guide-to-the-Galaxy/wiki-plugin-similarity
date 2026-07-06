@@ -213,7 +213,12 @@ export const startServer = ({ argv, app }) => {
     if (!vecFile) {
       return res.status(404).json({ error: `vectors not found for ${domain}` })
     }
-    res.sendFile(vecFile)
+    fs.readFile(vecFile, 'utf8', (err, data) => {
+      if (err) {
+        return res.status(500).json({ error: `unable to read vectors for ${domain}: ${err.message}` })
+      }
+      res.type('application/json').send(data)
+    })
   })
 
   // ── GET /system/embed.json?text=… ────────────────────────────────────────

@@ -63,6 +63,8 @@ const parseDSL = text => {
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
 const slugify = title => title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+const vectorUrl = (domain, origin = 'https://plugin.fedwiki.club') =>
+  `${origin}/system/semantic-vectors.json?domain=${encodeURIComponent(domain)}`
 
 const cosineScan = (queryVec, domainEntries, { threshold, limit, excludeSlug, excludeDomain }) => {
   const results = []
@@ -214,6 +216,24 @@ describe('isGlob', () => {
 describe('slugify', () => {
   it('lowercases and hyphenates', () => assert.equal(slugify('Pattern Machinery'), 'pattern-machinery'))
   it('strips special chars', () => assert.equal(slugify("What's Next?"), 'whats-next'))
+})
+
+// ── vectorUrl ────────────────────────────────────────────────────────────────
+
+describe('vectorUrl', () => {
+  it('uses same-origin proxy with domain query', () => {
+    assert.equal(
+      vectorUrl('plugin.fedwiki.club'),
+      'https://plugin.fedwiki.club/system/semantic-vectors.json?domain=plugin.fedwiki.club',
+    )
+  })
+
+  it('encodes domain query values', () => {
+    assert.equal(
+      vectorUrl('domain with spaces.test'),
+      'https://plugin.fedwiki.club/system/semantic-vectors.json?domain=domain%20with%20spaces.test',
+    )
+  })
 })
 
 // ── cosineScan ────────────────────────────────────────────────────────────────

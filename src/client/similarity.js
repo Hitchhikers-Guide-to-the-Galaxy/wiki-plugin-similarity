@@ -162,25 +162,11 @@ const resolveDomains = async (specs, origin) => {
 
 const vectorCache = new Map()
 
-// Detect whether the wiki is running on localhost (or a .localhost subdomain).
-// On localhost we proxy all domain vector fetches through the local server's
-// ?domain= parameter — this reads vectors directly from the farm folder on disk,
-// avoiding any need for remote servers to have this plugin installed, and
-// sidestepping CORS entirely.
-const isLocalhost = () => {
-  const h = window.location.hostname
-  return h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1'
-}
-
-const vectorUrl = domain => {
-  if (isLocalhost()) {
-    // Route through our local server — serves any farm domain from disk
-    return `${window.location.origin}/system/semantic-vectors.json?domain=${encodeURIComponent(domain)}`
-  }
-  // On a real server, fetch directly from the remote wiki — use same protocol
-  // as the current page to avoid mixed-content blocks on HTTPS sites
-  return `${window.location.protocol}//${domain}/system/semantic-vectors.json`
-}
+// Route vector requests through the current wiki's plugin server. This keeps
+// public HTTPS pages same-origin, avoids CORS failures, and lets the server read
+// indices from its configured farm roots.
+const vectorUrl = domain =>
+  `${window.location.origin}/system/semantic-vectors.json?domain=${encodeURIComponent(domain)}`
 
 const loadVectors = async domain => {
   if (vectorCache.has(domain)) return vectorCache.get(domain)
