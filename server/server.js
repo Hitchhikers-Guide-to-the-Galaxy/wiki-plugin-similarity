@@ -17,10 +17,15 @@
 //     Requires the FastAPI server to be running on EMBED_URL (default localhost:8000).
 //
 // Farm root is derived from argv.status which is {farm}/{domain}/status.
+//
+// CommonJS on purpose (see sibling server/package.json): wiki-server's older
+// require() loader throws ERR_REQUIRE_ESM on an ESM server.js and swallows the
+// error, silently dropping these routes. CJS loads under every Node / wiki
+// version, while the plugin's root package stays "type":"module".
 
-import fs   from 'node:fs'
-import path from 'node:path'
-import http from 'node:http'
+const fs   = require('node:fs')
+const path = require('node:path')
+const http = require('node:http')
 
 const EMBED_URL      = process.env.WIKI_EMBED_URL   || 'http://localhost:8000/embed'
 // Optional additional farm roots to search when a domain's vectors aren't found
@@ -164,7 +169,7 @@ const postJson = (url, body) =>
 
 // ── startServer — called by wiki-server/lib/plugins.js ────────────────────────
 
-export const startServer = ({ argv, app }) => {
+const startServer = ({ argv, app }) => {
   // Farm root: argv.status = {farm}/{thisDomain}/status  →  go up two levels
   const farmRoot = path.dirname(path.dirname(argv.status))
 
@@ -237,3 +242,5 @@ export const startServer = ({ argv, app }) => {
 
   console.log('[wiki-plugin-similarity] routes registered')
 }
+
+module.exports = { startServer }
