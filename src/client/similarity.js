@@ -17,12 +17,18 @@
 //   LIST     → show a table of all indexed domains and their page counts;
 //              optional glob patterns on subsequent lines filter the list
 //   SIMILAR: → ambient mode — automatically find pages similar to this page
+//   REPORT   → server-side ranked/bundled semantic report (ghost page)
+//   KEYWORD  → galactic MiniSearch over live site-index.json files (ghost page)
 //   (other)  → search form mode — user types a query, results appear
 //
-// Server endpoints required:
+// Server endpoints required (all same-origin, served by this plugin's server
+// component — works on any host, including the public farm):
 //   GET  /system/indexed-domains.json?pattern=glob1,glob2
 //   GET  /system/semantic-vectors.json?domain=
 //   GET  /system/embed.json?text=query
+//   POST /system/search-report.json
+//   GET  /system/farm-search.json?q=&pattern=&limit=
+//   GET  /system/build-index.json?domains=&force=
 
 // ── DSL Parser ────────────────────────────────────────────────────────────────
 
@@ -69,6 +75,10 @@ const parseDSL = text => {
     }
     if (isCmd(upper, 'REPORT')) {
       if (mode === 'search') mode = 'report'
+      continue
+    }
+    if (isCmd(upper, 'KEYWORD')) {
+      if (mode === 'search') mode = 'keyword'
       continue
     }
     if (isCmd(upper, 'BUILD')) {
@@ -325,9 +335,9 @@ export const emit = (div, item) => {
         <div class="sim-status">Finding similar pages across ${label}…</div>
         <div class="sim-results"></div>
       </div>`)
-  } else if (mode === 'author' || mode === 'report') {
+  } else if (mode === 'author' || mode === 'report' || mode === 'keyword') {
     const label = specs.length ? specs.join(', ') : '(current domain)'
-    const btnLabel = mode === 'report' ? 'Report' : 'Author'
+    const btnLabel = mode === 'report' ? 'Report' : mode === 'keyword' ? 'Keyword' : 'Author'
     div.html(`
       <style>${STYLES}</style>
       <div class="similarity" data-id="${item.id}">
@@ -506,7 +516,11 @@ export const bind = (div, item) => {
       try {
         const domains = encodeURIComponent((specs.length ? specs : ['*']).join(','))
         const res = await fetch(
-          `http://api.localhost/build-index.json?domains=${domains}&force=${force ? 1 : 0}`)
+          `${origin}/system/build-index.json?domains=${domains}&force=${force ? 1 : 0}`)
+        if (res.status === 501) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.hint || 'indexing runs on the farm indexer, not this server')
+        }
         if (!res.ok) throw new Error(`build-index failed: ${res.status}`)
         const page = await res.json()
         window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
@@ -547,7 +561,7 @@ export const bind = (div, item) => {
       try {
         const body = { query, domains: specs.length ? specs : ['*'], limit, live }
         if (thresholdSet) body.threshold = threshold
-        const res = await fetch('http://api.localhost/search-report', {
+        const res = await fetch(`${origin}/system/search-report.json`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -566,6 +580,37 @@ export const bind = (div, item) => {
 
     btn.addEventListener('click', doReport)
     input.addEventListener('keydown', e => { if (e.key === 'Enter') doReport() })
+
+  } else if (mode === 'keyword') {
+    // Keyword mode — galactic MiniSearch: the server reads each site's own
+    // per-edit site-index.json; result opens as a ghost page.
+    const input = div.find('.sim-input')[0]
+    const btn   = div.find('.sim-btn')[0]
+
+    status.textContent = `Keyword search ready — domains: ${specs.length ? specs.join(', ') : '*'} · limit ${limit}`
+
+    const doKeyword = async () => {
+      const query = input.value.trim()
+      if (!query) return
+      btn.disabled = true
+      status.textContent = 'Searching live site indexes…'
+      try {
+        const pattern = encodeURIComponent((specs.length ? specs : ['*']).join(','))
+        const res = await fetch(
+          `${origin}/system/farm-search.json?q=${encodeURIComponent(query)}&pattern=${pattern}&limit=${limit}`)
+        if (!res.ok) throw new Error(`farm-search failed: ${res.status}`)
+        const page = await res.json()
+        window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
+        status.textContent = `Keyword search ready — domains: ${specs.length ? specs.join(', ') : '*'} · limit ${limit}`
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    btn.addEventListener('click', doKeyword)
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doKeyword() })
 
   } else if (mode === 'author') {
     // Author mode — same search form but creates a ghost page from results

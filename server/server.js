@@ -1,22 +1,31 @@
 // wiki-plugin-similarity — server-side component
 //
-// Registers three routes with the wiki's Express app via the startServer(params)
-// hook in wiki-server/lib/plugins.js.
+// Registers same-origin /system routes with the wiki's Express app via the
+// startServer(params) hook in wiki-server/lib/plugins.js. Everything a search
+// needs runs in-process on whatever host serves the wiki — no HomeLab FastAPI
+// dependency — so club members on the public farm get working search.
 //
 // Routes:
-//   GET /system/indexed-domains.json?pattern=glob1,glob2
-//     Returns [{domain, page_count}] for all domains whose semantic-vectors.json
-//     exists and whose name matches any of the supplied glob patterns.
+//   GET  /system/indexed-domains.json?pattern=glob1,glob2
+//     [{domain, page_count}] for domains with a semantic-vectors.json.
+//   GET  /system/semantic-vectors.json[?domain=]
+//     Serves {farm}/{domain}/status/semantic-vectors.json.
+//   GET  /system/embed.json?text=…
+//     384-dim unit vector via the in-process transformers.js embedder
+//     (BAAI/bge-small-en-v1.5 — same model the indexes were built with).
+//     Set WIKI_EMBED_URL to proxy to an external embedder instead.
+//   POST /system/search-report.json  {query, domains, limit, threshold, live}
+//     Ranked, stub-filtered, fork-bundled semantic report (page JSON).
+//   GET  /system/farm-search.json?q=…&pattern=…&limit=…
+//     Galactic keyword search — reads each site's own per-edit MiniSearch
+//     index (status/site-index.json). No index building.
+//   GET  /system/build-index.json?domains=…&force=…
+//     Proxy to the farm indexer (WIKI_INDEXER_URL) when configured; heavy
+//     embedding is the indexer's job (Pi5 on the Hitchhikers farm), never
+//     the wiki server's.
 //
-//   GET /system/semantic-vectors.json
-//     Serves {farm}/{req.hostname}/status/semantic-vectors.json.
-//     req.hostname selects the domain in a fedwiki farm.
-//
-//   GET /system/embed?text=…
-//     Proxies to the local FastAPI /embed endpoint and returns {vector:[…]}.
-//     Requires the FastAPI server to be running on EMBED_URL (default localhost:8000).
-//
-// Farm root is derived from argv.status which is {farm}/{domain}/status.
+// Farm root is derived from argv.status ({farm}/{domain}/status); extra farm
+// roots come from WIKI_EXTRA_FARMS (colon-separated absolute paths).
 //
 // CommonJS on purpose (see sibling server/package.json): wiki-server's older
 // require() loader throws ERR_REQUIRE_ESM on an ESM server.js and swallows the
@@ -27,118 +36,19 @@ const fs   = require('node:fs')
 const path = require('node:path')
 const http = require('node:http')
 
-const EMBED_URL      = process.env.WIKI_EMBED_URL   || 'http://localhost:8000/embed'
-// Optional additional farm roots to search when a domain's vectors aren't found
-// in the primary farm. Colon-separated list of absolute paths, e.g.:
-//   WIKI_EXTRA_FARMS=/Users/david/Nextcloud/fedwiki:/Users/david/other-farm
-const EXTRA_FARMS    = (process.env.WIKI_EXTRA_FARMS || '').split(':').filter(Boolean)
+const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm-lib')
+const embedder     = require('./embedder')
+const { buildReport } = require('./search-report')
+const { searchFarm, keywordReportPage } = require('./farm-search')
 
-// ── Glob matching ─────────────────────────────────────────────────────────────
-// Supports * (any chars) and ? (one char). No path separator semantics needed.
+// Optional external embedder (proxy) — unset means embed in-process.
+const EMBED_URL   = process.env.WIKI_EMBED_URL || null
+// Farm indexer for BUILD requests (HomeLab FastAPI, or unset on the public farm).
+const INDEXER_URL = process.env.WIKI_INDEXER_URL || null
+// Optional additional farm roots, colon-separated absolute paths.
+const EXTRA_FARMS = (process.env.WIKI_EXTRA_FARMS || '').split(':').filter(Boolean)
 
-const globMatch = (pattern, str) => {
-  const p = pattern.length
-  const s = str.length
-  const dp = Array.from({ length: p + 1 }, () => new Array(s + 1).fill(false))
-  dp[0][0] = true
-  for (let i = 1; i <= p; i++) {
-    if (pattern[i - 1] === '*') dp[i][0] = dp[i - 1][0]
-  }
-  for (let i = 1; i <= p; i++) {
-    for (let j = 1; j <= s; j++) {
-      if (pattern[i - 1] === '*') {
-        dp[i][j] = dp[i - 1][j] || dp[i][j - 1]
-      } else if (pattern[i - 1] === '?' || pattern[i - 1] === str[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1]
-      }
-    }
-  }
-  return dp[p][s]
-}
-
-// Scope keywords (exact uppercase, per DSL convention):
-//   *        all farms
-//   PUBLIC   domains in the extra farms (Nextcloud mirror)
-//   LOCAL    domains in the primary (localhost) farm
-//   PRIVATE  public domains marked "restricted": true in the farm config
-
-// Collect restricted domains from config-*.json files at each public farm root
-const loadRestricted = () => {
-  const restricted = new Set()
-  for (const farm of EXTRA_FARMS) {
-    let files
-    try { files = fs.readdirSync(farm) } catch { continue }
-    for (const f of files) {
-      if (!/^config-.*\.json$/.test(f)) continue
-      try {
-        const cfg = JSON.parse(fs.readFileSync(path.join(farm, f), 'utf8'))
-        for (const [domain, opts] of Object.entries(cfg.wikiDomains || {})) {
-          if (opts && opts.restricted) restricted.add(domain)
-        }
-      } catch { /* ignore malformed config */ }
-    }
-  }
-  return restricted
-}
-const RESTRICTED = loadRestricted()
-
-// kind: 'local' for the primary farm, 'public' for extra farms
-const matchesAny = (domain, kind, patterns) =>
-  patterns.some(p => {
-    if (p === '*') return true
-    if (p === 'PUBLIC') return kind === 'public'
-    if (p === 'LOCAL') return kind === 'local'
-    if (p === 'PRIVATE') return kind === 'public' && RESTRICTED.has(domain)
-    return globMatch(p, domain)
-  })
-
-// ── Multi-farm helpers ────────────────────────────────────────────────────────
-
-// Return the first path that exists across all farm roots for a given domain
-// and relative sub-path (e.g. 'status/semantic-vectors.json').
-const findInFarms = (farmRoot, domain, relPath) => {
-  const farms = [farmRoot, ...EXTRA_FARMS]
-  for (const farm of farms) {
-    const full = path.join(farm, domain, relPath)
-    try { fs.accessSync(full, fs.constants.F_OK); return full } catch { /* try next */ }
-  }
-  return null
-}
-
-// ── Discover indexed domains ───────────────────────────────────────────────────
-
-const findIndexedDomains = (farmRoot, patterns) => {
-  // primary farm is 'local'; extra farms (Nextcloud mirror) are 'public'
-  const farms = [[farmRoot, 'local'], ...EXTRA_FARMS.map(f => [f, 'public'])]
-  const seen  = new Set()
-  const results = []
-
-  for (const [farm, kind] of farms) {
-    let entries
-    try { entries = fs.readdirSync(farm, { withFileTypes: true }) } catch { continue }
-
-    for (const ent of entries) {
-      if (!ent.isDirectory()) continue
-      const domain = ent.name
-      if (seen.has(domain)) continue          // first farm wins
-      if (!matchesAny(domain, kind, patterns)) continue
-      const vecFile = path.join(farm, domain, 'status', 'semantic-vectors.json')
-      try { fs.accessSync(vecFile, fs.constants.F_OK) } catch { continue }
-      seen.add(domain)
-      let pageCount = null
-      try {
-        const pages = JSON.parse(fs.readFileSync(vecFile, 'utf8'))
-        pageCount = Array.isArray(pages) ? pages.length : null
-      } catch { /* ignore */ }
-      results.push({ domain, page_count: pageCount })
-    }
-  }
-
-  results.sort((a, b) => a.domain.localeCompare(b.domain))
-  return results
-}
-
-// ── Fetch helper (node:http, avoids fetch() version concerns) ─────────────────
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 const postJson = (url, body) =>
   new Promise((resolve, reject) => {
@@ -159,7 +69,7 @@ const postJson = (url, body) =>
       res.on('data', chunk => { data += chunk })
       res.on('end', () => {
         try { resolve(JSON.parse(data)) }
-        catch (e) { reject(new Error(`embed response parse error: ${e.message}`)) }
+        catch (e) { reject(new Error(`response parse error: ${e.message}`)) }
       })
     })
     req.on('error', reject)
@@ -167,31 +77,64 @@ const postJson = (url, body) =>
     req.end()
   })
 
+const getJson = url =>
+  new Promise((resolve, reject) => {
+    const u = new URL(url)
+    http.get(u, res => {
+      let data = ''
+      res.on('data', chunk => { data += chunk })
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)) }
+        catch (e) { reject(new Error(`response parse error: ${e.message}`)) }
+      })
+    }).on('error', reject)
+  })
+
+// Read a JSON request body without assuming a body-parser is mounted.
+const readBody = req =>
+  new Promise((resolve, reject) => {
+    if (req.body && typeof req.body === 'object') return resolve(req.body)
+    let data = ''
+    req.on('data', chunk => { data += chunk })
+    req.on('end', () => {
+      try { resolve(data ? JSON.parse(data) : {}) }
+      catch (e) { reject(new Error(`invalid JSON body: ${e.message}`)) }
+    })
+    req.on('error', reject)
+  })
+
 // ── startServer — called by wiki-server/lib/plugins.js ────────────────────────
 
 const startServer = ({ argv, app }) => {
   // Farm root: argv.status = {farm}/{thisDomain}/status  →  go up two levels
   const farmRoot = path.dirname(path.dirname(argv.status))
+  // primary farm is 'local'; extra farms (Nextcloud mirror) are 'public'
+  const farms = [[farmRoot, 'local'], ...EXTRA_FARMS.map(f => [f, 'public'])]
+  const restricted = loadRestricted(EXTRA_FARMS)
+  const ctx = { farms, restricted, embed: embedText }
 
-  console.log('[wiki-plugin-similarity] registering /system routes, farm:', farmRoot)
+  console.log('[wiki-plugin-similarity] registering /system routes, farms:',
+    farms.map(([f]) => f).join(', '))
 
-  // CORS helper
+  // Warm the embedding model in the background so the first query is fast.
+  if (!EMBED_URL) embedder.warm()
+
+  async function embedText(text) {
+    if (EMBED_URL) return (await postJson(EMBED_URL, { text })).vector
+    return embedder.embed(text)
+  }
+
   const cors = res => {
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   }
 
-  // ── OPTIONS pre-flight ─────────────────────────────────────────────────────
-  app.options('/system/indexed-domains.json', (req, res) => {
-    cors(res); res.sendStatus(204)
-  })
-  app.options('/system/semantic-vectors.json', (req, res) => {
-    cors(res); res.sendStatus(204)
-  })
-  app.options('/system/embed.json', (req, res) => {
-    cors(res); res.sendStatus(204)
-  })
+  for (const route of ['/system/indexed-domains.json', '/system/semantic-vectors.json',
+                       '/system/embed.json', '/system/search-report.json',
+                       '/system/farm-search.json', '/system/build-index.json']) {
+    app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
+  }
 
   // ── GET /system/indexed-domains.json?pattern=glob1,glob2 ──────────────────
   app.get('/system/indexed-domains.json', (req, res) => {
@@ -199,22 +142,25 @@ const startServer = ({ argv, app }) => {
     const raw      = req.query.pattern || '*'
     const patterns = raw.split(',').map(p => p.trim()).filter(Boolean)
     const limit    = parseInt(req.query.limit) || null
-    let results    = findIndexedDomains(farmRoot, patterns)
+    let results = listDomains(farms, patterns, restricted, 'status/semantic-vectors.json')
+      .map(({ farm, domain }) => {
+        let pageCount = null
+        try {
+          const pages = JSON.parse(fs.readFileSync(
+            path.join(farm, domain, 'status', 'semantic-vectors.json'), 'utf8'))
+          pageCount = Array.isArray(pages) ? pages.length : null
+        } catch { /* ignore */ }
+        return { domain, page_count: pageCount }
+      })
     if (limit) results = results.slice(0, limit)
     res.json(results)
   })
 
-  // ── GET /system/semantic-vectors.json ─────────────────────────────────────
-  // Two modes:
-  //   ?domain=david.hitchhikers.earth  — local proxy: searches all farm roots
-  //       on disk (private farm + WIKI_EXTRA_FARMS). Lets localhost clients load
-  //       vectors for any domain without CORS or remote plugin requirements.
-  //   (no ?domain)  — req.hostname selects the domain; works for farm requests
-  //       where Caddy routes each hostname to this server.
+  // ── GET /system/semantic-vectors.json[?domain=] ────────────────────────────
   app.get('/system/semantic-vectors.json', (req, res) => {
     cors(res)
     const domain  = req.query.domain || req.hostname || 'localhost'
-    const vecFile = findInFarms(farmRoot, domain, 'status/semantic-vectors.json')
+    const vecFile = findInFarms(farms, domain, 'status/semantic-vectors.json')
     if (!vecFile) {
       return res.status(404).json({ error: `vectors not found for ${domain}` })
     }
@@ -226,17 +172,72 @@ const startServer = ({ argv, app }) => {
     })
   })
 
-  // ── GET /system/embed.json?text=… ────────────────────────────────────────
+  // ── GET /system/embed.json?text=… ──────────────────────────────────────────
   app.get('/system/embed.json', async (req, res) => {
     cors(res)
     const text = req.query.text
     if (!text) return res.status(400).json({ error: 'text parameter required' })
     try {
-      const result = await postJson(EMBED_URL, { text })
-      res.json(result)
+      res.json({ vector: await embedText(text) })
     } catch (e) {
-      console.error('[wiki-plugin-similarity] embed proxy error:', e.message)
-      res.status(502).json({ error: `embed service unavailable: ${e.message}` })
+      console.error('[wiki-plugin-similarity] embed error:', e.message)
+      res.status(502).json({ error: `embedding unavailable: ${e.message}` })
+    }
+  })
+
+  // ── POST /system/search-report.json ────────────────────────────────────────
+  app.post('/system/search-report.json', async (req, res) => {
+    cors(res)
+    try {
+      const body = await readBody(req)
+      if (!body.query) return res.status(400).json({ error: 'query required' })
+      const page = await buildReport(
+        body.query, body.domains || ['*'], body.limit || 10, ctx,
+        body.threshold ?? null, !!body.live)
+      res.json(page)
+    } catch (e) {
+      console.error('[wiki-plugin-similarity] search-report error:', e.message)
+      res.status(500).json({ error: `search-report failed: ${e.message}` })
+    }
+  })
+
+  // ── GET /system/farm-search.json?q=…&pattern=…&limit=… ────────────────────
+  app.get('/system/farm-search.json', (req, res) => {
+    cors(res)
+    const q = (req.query.q || '').trim()
+    if (!q) return res.status(400).json({ error: 'q parameter required' })
+    const patterns = (req.query.pattern || '*').split(',').map(p => p.trim()).filter(Boolean)
+    const limit = parseInt(req.query.limit) || 10
+    try {
+      const outcome = searchFarm(farms, patterns, restricted, q, limit)
+      if (req.query.format === 'flat') return res.json(outcome)
+      res.json(keywordReportPage(q, outcome, limit, patterns))
+    } catch (e) {
+      console.error('[wiki-plugin-similarity] farm-search error:', e.message)
+      res.status(500).json({ error: `farm-search failed: ${e.message}` })
+    }
+  })
+
+  // ── GET /system/build-index.json?domains=…&force=… ────────────────────────
+  // Heavy embedding is the farm indexer's job — proxy when configured, else
+  // explain where indexing happens.
+  app.get('/system/build-index.json', async (req, res) => {
+    cors(res)
+    if (!INDEXER_URL) {
+      return res.status(501).json({
+        error: 'no farm indexer configured on this server',
+        hint: 'Indexing runs on the farm indexer (Pi5 on the Hitchhikers farm); ' +
+              'indexes arrive by sync. Set WIKI_INDEXER_URL to enable proxying.',
+      })
+    }
+    try {
+      const qs = new URLSearchParams({
+        domains: req.query.domains || '*',
+        force:   req.query.force || '0',
+      })
+      res.json(await getJson(`${INDEXER_URL}?${qs}`))
+    } catch (e) {
+      res.status(502).json({ error: `farm indexer unavailable: ${e.message}` })
     }
   })
 
