@@ -19,14 +19,37 @@ const MODEL     = process.env.WIKI_EMBED_MODEL || 'Xenova/bge-small-en-v1.5'
 const POOLING   = process.env.WIKI_EMBED_POOLING || 'cls'
 const QUANTIZED = process.env.WIKI_EMBED_QUANTIZED === '1'
 
+// transformers.js statically imports onnxruntime-node, whose native binary
+// needs glibc. On musl containers (node:alpine — the public farm) that import
+// throws "Error loading shared library ld-linux-x86-64.so.2". Probe the
+// native runtime with a CJS require first; if it can't load, register a
+// module hook (Node >= 18.19) that redirects the onnxruntime-node import to
+// onnxruntime-web — the WASM backend runs everywhere and benchmarks ~25ms a
+// query. WIKI_EMBED_FORCE_WASM=1 forces the WASM path for testing.
+
+const nativeOrtLoads = () => {
+  if (process.env.WIKI_EMBED_FORCE_WASM === '1') return false
+  try { require('onnxruntime-node'); return true } catch { return false }
+}
+
 let extractorPromise = null
 
 const getExtractor = () => {
   if (!extractorPromise) {
     extractorPromise = (async () => {
+      if (!nativeOrtLoads()) {
+        const { register } = require('node:module')
+        if (typeof register !== 'function') {
+          throw new Error('native onnxruntime unavailable and Node lacks ' +
+            'module.register (need >= 18.19) for the WASM fallback')
+        }
+        register('./ort-hooks.mjs', require('node:url').pathToFileURL(__filename))
+        console.log('[wiki-plugin-similarity] native onnxruntime unavailable — using WASM backend')
+      }
       // Dynamic import: @xenova/transformers is ESM-only; this file must stay CJS.
       const { pipeline, env } = await import('@xenova/transformers')
       if (process.env.WIKI_MODEL_CACHE) env.cacheDir = process.env.WIKI_MODEL_CACHE
+      if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1
       return pipeline('feature-extraction', MODEL, { quantized: QUANTIZED })
     })()
     extractorPromise.catch(() => { extractorPromise = null }) // allow retry

@@ -3,70 +3,66 @@
   "story": [
     {
       "type": "markdown",
-      "id": "61ccb2d2cdb60c71",
-      "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm. One item type — **similarity** — with behaviour controlled by a DSL: interactive search, ambient similar-pages panel, domain listing, ranked search reports, ghost-page authoring, index building, and generic report buttons."
+      "id": "aec1dfcd5f2bc42b",
+      "text": "The Similarity plugin adds search to a Federated Wiki farm — semantic similarity over prebuilt vector indexes, ranked search reports, and galactic keyword search over each site's own MiniSearch index. One item type — **similarity** — with a line-oriented DSL, plus a server component that serves every search same-origin. Works on any host: embedding runs in-process (native ONNX where available, WASM everywhere else)."
     },
     {
       "type": "markdown",
-      "id": "a3f7c8d2e1b94056",
-      "text": "**Version:** 0.5.0 — server-side search: everything runs same-origin on the wiki host, no external API needed."
+      "id": "28edff984cc5334d",
+      "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE):\n\n- (no keyword) — interactive semantic search form\n- `SIMILAR: high|medium|low` — ambient: pages similar to this page\n- `REPORT` — server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` — galactic MiniSearch over live site-index.json files\n- `LIST` — table of indexed domains\n- `AUTHOR` — search results as a draggable ghost page\n- `BUILD` / `FORCE` — proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` — open any page-json as a ghost page\n- `THRESHOLD: 0.72` · `LIMIT: 8` · `LIVE` — tuning"
+    },
+    {
+      "type": "markdown",
+      "id": "251793ca0dae4810",
+      "text": "## Try It\n\nSemantic search across the farm:"
     },
     {
       "type": "similarity",
-      "id": "ad3c41667c285efd",
+      "id": "86aeab8be16dd8e1",
+      "text": "*"
+    },
+    {
+      "type": "markdown",
+      "id": "b6a9be0145bae9bd",
+      "text": "Pages similar to this one:"
+    },
+    {
+      "type": "similarity",
+      "id": "cf558a16395d7d8c",
       "text": "SIMILAR: medium\nLIMIT: 5"
     },
     {
       "type": "markdown",
-      "id": "bdf93e3860d64ebb",
-      "text": "## The DSL"
+      "id": "1aceb7035c7537b2",
+      "text": "A ranked report (opens as a ghost page):"
+    },
+    {
+      "type": "similarity",
+      "id": "59bfe1e3968743a1",
+      "text": "REPORT\nLIMIT: 5"
     },
     {
       "type": "markdown",
-      "id": "0d628d43edf9f8e8",
-      "text": "The item's `text` field configures what the item does. Mode commands come first; the rest are options and domain specs:\n\n```\nSIMILAR              ambient mode — similar pages to this one\nSIMILAR high         threshold preset (high=0.78 / medium=0.68 / low=0.58)\nLIST                 table of indexed domains with page counts\nAUTHOR               search → ghost page of [[wiki links]] + references\nREPORT               server-side ranked report (stubs dropped, forks bundled)\nBUILD                button that builds semantic indexes\nGHOST <url>          button that opens any page-json URL as a ghost page\n\nTHRESHOLD 0.72       exact cosine threshold\nLIMIT 8              max results (default 10)\nLIVE                 bypass the localStorage cache\nFORCE                BUILD: re-embed even when the index is fresh\nBUTTON <text>        custom button caption (BUILD / GHOST)\n```\n\nColons and extra whitespace are optional — `LIMIT: 8`, `LIMIT 8`, and `LIMIT:8` all work. Leave `text` empty for an interactive search form on the current domain."
+      "id": "31b81a31f675c4e1",
+      "text": "Keyword search over the sites' own indexes:"
+    },
+    {
+      "type": "similarity",
+      "id": "0c3fb9298ba8fd23",
+      "text": "KEYWORD\nLIMIT: 5"
     },
     {
       "type": "markdown",
-      "id": "1e2f3a4b5c6d7e8f",
-      "text": "## Domain Specs and Scopes"
+      "id": "d9a96dfebb9d1692",
+      "text": "## Server Routes\n\nAll same-origin, registered by the plugin's server component:\n\n- `GET /system/indexed-domains.json?pattern=`\n- `GET /system/semantic-vectors.json?domain=`\n- `GET /system/embed.json?text=`\n- `POST /system/search-report.json`\n- `GET /system/farm-search.json?q=&pattern=&limit=`\n- `GET /system/build-index.json?domains=` (proxied to the farm indexer)\n\nIndexes are `status/semantic-vectors.json` per domain — built by the farm indexer, distributed by sync, read from farm disk. Keyword search reads each site's per-edit `status/site-index.json`; no separate index is built. Query embedding is BAAI bge-small-en-v1.5, 384-dim, CLS-pooled, unit-normalised — byte-compatible with the index builder."
     },
     {
       "type": "markdown",
-      "id": "2f3a4b5c6d7e8f90",
-      "text": "Any other line is a domain spec. Scope keywords expand server-side:\n\n```\n*                        all indexed domains, all farms\nPUBLIC                   the Nextcloud mirror farm\nLOCAL                    the localhost farm\nPRIVATE                  public wikis with restricted: true in the farm config\ndavid.*                  glob pattern\ndavid.hitchhikers.earth  explicit domain\n# comment                ignored\n```\n\nSpecs combine — `LOCAL` and `david.*` on separate lines searches both."
-    },
-    {
-      "type": "markdown",
-      "id": "c0775c94a895e9d2",
-      "text": "## Modes"
-    },
-    {
-      "type": "markdown",
-      "id": "4f91a3b2d8e05c11",
-      "text": "**Search** (default) — interactive form; results appear inline as scored links. Shift-click a result to append it at the end of the lineup instead of truncating.\n\n**Similar** — runs on page load using the current page's pre-computed vector (no embed call if already indexed). Ranked *Similar Pages* list.\n\n**List** — table of indexed domains with page counts; supports scopes, globs, and `LIMIT`.\n\n**Author** — same search, but opens a ghost page with `# Similar Pages` ([[wiki links]], deduplicated) and `# Reference Links` (all results as reference items with scores).\n\n**Report** — posts to the plugin's own `/system/search-report.json`: candidates from semantic scan ∪ title matching, stubs dropped, forks and near-duplicates bundled under the strongest copy with a one-click lineup link, ranked by semantic × richness × recency + title boost. Opens as a ghost page.\n\n**Keyword** — galactic MiniSearch via `/system/farm-search.json`: the server reads each site's own per-edit `site-index.json` — the indexes fedwiki already maintains — plus sitemap titles. No separate index is built. Opens as a ghost page.\n\n**Build** — a button that asks the farm indexer to rebuild semantic indexes. The wiki server never embeds page corpora itself; it proxies to `WIKI_INDEXER_URL` when configured and otherwise explains that indexing runs on the farm indexer. Add `FORCE` to re-embed fresh domains.\n\n**Ghost** — a generic button: `GHOST <url>` fetches any endpoint returning fedwiki page JSON and opens it as a ghost page. Caption set with `BUTTON <text>`."
-    },
-    {
-      "type": "markdown",
-      "id": "c0775c94a895e9d3",
-      "text": "## Caching"
-    },
-    {
-      "type": "markdown",
-      "id": "9a1b2c3d4e5f6001",
-      "text": "Results are cached in `localStorage` keyed by item id and invalidated whenever the item's `text` changes. Add `LIVE` anywhere in the DSL to bypass the cache."
-    },
-    {
-      "type": "markdown",
-      "id": "c0775c94a895e9d4",
-      "text": "## How It Works"
-    },
-    {
-      "type": "markdown",
-      "id": "4b1bbe95544548eb",
-      "text": "Pages are pre-indexed as 384-dimensional embedding vectors (BAAI/bge-small-en-v1.5, unit-normalised) by the farm indexer, which writes `semantic-vectors.json` into each domain's `status/` folder. The plugin loads these indexes and scores them with a dot product — no remote search engine required.\n\nThe server component registers same-origin `/system` routes: `indexed-domains.json`, `semantic-vectors.json`, `embed.json` (query embedding **in-process** via transformers.js — the same model the indexes were built with, so scores match), `search-report.json` (the full ranked report pipeline), `farm-search.json` (keyword search over the sites' own per-edit MiniSearch indexes), and `build-index.json` (indexer proxy). Because every route runs on the wiki host itself, search works for any visitor — no HomeLab services needed. See [[Similarity Indexing]] for building indices and [[Build Semantic Index]] for triggering builds from the wiki."
+      "id": "21eb5354d2adb29e",
+      "text": "**Version:** 0.5.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] — architecture, indexing, freshness."
     }
   ],
+  "plugin": "similarity",
   "journal": [
     {
       "type": "create",
@@ -75,44 +71,68 @@
         "story": [
           {
             "type": "markdown",
-            "id": "61ccb2d2cdb60c71",
-            "text": "The Similarity plugin adds semantic similarity search to a Federated Wiki farm."
+            "id": "aec1dfcd5f2bc42b",
+            "text": "The Similarity plugin adds search to a Federated Wiki farm — semantic similarity over prebuilt vector indexes, ranked search reports, and galactic keyword search over each site's own MiniSearch index. One item type — **similarity** — with a line-oriented DSL, plus a server component that serves every search same-origin. Works on any host: embedding runs in-process (native ONNX where available, WASM everywhere else)."
+          },
+          {
+            "type": "markdown",
+            "id": "28edff984cc5334d",
+            "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE):\n\n- (no keyword) — interactive semantic search form\n- `SIMILAR: high|medium|low` — ambient: pages similar to this page\n- `REPORT` — server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` — galactic MiniSearch over live site-index.json files\n- `LIST` — table of indexed domains\n- `AUTHOR` — search results as a draggable ghost page\n- `BUILD` / `FORCE` — proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` — open any page-json as a ghost page\n- `THRESHOLD: 0.72` · `LIMIT: 8` · `LIVE` — tuning"
+          },
+          {
+            "type": "markdown",
+            "id": "251793ca0dae4810",
+            "text": "## Try It\n\nSemantic search across the farm:"
+          },
+          {
+            "type": "similarity",
+            "id": "86aeab8be16dd8e1",
+            "text": "*"
+          },
+          {
+            "type": "markdown",
+            "id": "b6a9be0145bae9bd",
+            "text": "Pages similar to this one:"
+          },
+          {
+            "type": "similarity",
+            "id": "cf558a16395d7d8c",
+            "text": "SIMILAR: medium\nLIMIT: 5"
+          },
+          {
+            "type": "markdown",
+            "id": "1aceb7035c7537b2",
+            "text": "A ranked report (opens as a ghost page):"
+          },
+          {
+            "type": "similarity",
+            "id": "59bfe1e3968743a1",
+            "text": "REPORT\nLIMIT: 5"
+          },
+          {
+            "type": "markdown",
+            "id": "31b81a31f675c4e1",
+            "text": "Keyword search over the sites' own indexes:"
+          },
+          {
+            "type": "similarity",
+            "id": "0c3fb9298ba8fd23",
+            "text": "KEYWORD\nLIMIT: 5"
+          },
+          {
+            "type": "markdown",
+            "id": "d9a96dfebb9d1692",
+            "text": "## Server Routes\n\nAll same-origin, registered by the plugin's server component:\n\n- `GET /system/indexed-domains.json?pattern=`\n- `GET /system/semantic-vectors.json?domain=`\n- `GET /system/embed.json?text=`\n- `POST /system/search-report.json`\n- `GET /system/farm-search.json?q=&pattern=&limit=`\n- `GET /system/build-index.json?domains=` (proxied to the farm indexer)\n\nIndexes are `status/semantic-vectors.json` per domain — built by the farm indexer, distributed by sync, read from farm disk. Keyword search reads each site's per-edit `status/site-index.json`; no separate index is built. Query embedding is BAAI bge-small-en-v1.5, 384-dim, CLS-pooled, unit-normalised — byte-compatible with the index builder."
+          },
+          {
+            "type": "markdown",
+            "id": "21eb5354d2adb29e",
+            "text": "**Version:** 0.5.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] — architecture, indexing, freshness."
           }
         ]
       },
-      "date": 1781133629000,
-      "certificate": "from marvin"
-    },
-    {
-      "type": "edit",
-      "id": "a3f7c8d2e1b94056",
-      "item": {
-        "type": "markdown",
-        "id": "a3f7c8d2e1b94056",
-        "text": "**Version:** 0.5.0 — server-side search: everything runs same-origin on the wiki host, no external API needed."
-      },
-      "date": 1783773290699
-    },
-    {
-      "type": "edit",
-      "id": "4f91a3b2d8e05c11",
-      "item": {
-        "type": "markdown",
-        "id": "4f91a3b2d8e05c11",
-        "text": "**Search** (default) — interactive form; results appear inline as scored links. Shift-click a result to append it at the end of the lineup instead of truncating.\n\n**Similar** — runs on page load using the current page's pre-computed vector (no embed call if already indexed). Ranked *Similar Pages* list.\n\n**List** — table of indexed domains with page counts; supports scopes, globs, and `LIMIT`.\n\n**Author** — same search, but opens a ghost page with `# Similar Pages` ([[wiki links]], deduplicated) and `# Reference Links` (all results as reference items with scores).\n\n**Report** — posts to the plugin's own `/system/search-report.json`: candidates from semantic scan ∪ title matching, stubs dropped, forks and near-duplicates bundled under the strongest copy with a one-click lineup link, ranked by semantic × richness × recency + title boost. Opens as a ghost page.\n\n**Keyword** — galactic MiniSearch via `/system/farm-search.json`: the server reads each site's own per-edit `site-index.json` — the indexes fedwiki already maintains — plus sitemap titles. No separate index is built. Opens as a ghost page.\n\n**Build** — a button that asks the farm indexer to rebuild semantic indexes. The wiki server never embeds page corpora itself; it proxies to `WIKI_INDEXER_URL` when configured and otherwise explains that indexing runs on the farm indexer. Add `FORCE` to re-embed fresh domains.\n\n**Ghost** — a generic button: `GHOST <url>` fetches any endpoint returning fedwiki page JSON and opens it as a ghost page. Caption set with `BUTTON <text>`."
-      },
-      "date": 1783773290699
-    },
-    {
-      "type": "edit",
-      "id": "4b1bbe95544548eb",
-      "item": {
-        "type": "markdown",
-        "id": "4b1bbe95544548eb",
-        "text": "Pages are pre-indexed as 384-dimensional embedding vectors (BAAI/bge-small-en-v1.5, unit-normalised) by the farm indexer, which writes `semantic-vectors.json` into each domain's `status/` folder. The plugin loads these indexes and scores them with a dot product — no remote search engine required.\n\nThe server component registers same-origin `/system` routes: `indexed-domains.json`, `semantic-vectors.json`, `embed.json` (query embedding **in-process** via transformers.js — the same model the indexes were built with, so scores match), `search-report.json` (the full ranked report pipeline), `farm-search.json` (keyword search over the sites' own per-edit MiniSearch indexes), and `build-index.json` (indexer proxy). Because every route runs on the wiki host itself, search works for any visitor — no HomeLab services needed. See [[Similarity Indexing]] for building indices and [[Build Semantic Index]] for triggering builds from the wiki."
-      },
-      "date": 1783773290699
+      "date": 1783782734556,
+      "provenance": "Authored by an AI agent — Claude Fable 5 via the [[fedwiki-page]] skill. [https://claude.com/claude-code Claude Code]"
     }
-  ],
-  "plugin": "similarity"
+  ]
 }
