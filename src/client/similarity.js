@@ -12,6 +12,8 @@
 //   SIMILAR: high             threshold preset AND ambient mode trigger
 //   THRESHOLD: 0.72           exact cosine threshold (overrides SIMILAR:)
 //   LIMIT: 8                  max results shown (default 10)
+//   ROSTER site/slug          add the sites of a roster page to the scope
+//   FARM other.farm.tld       ask a peer farm to continue the search (experimental)
 //
 // Mode is determined by the FIRST meaningful line (Ward's ALL-CAPS convention):
 //   LIST     → show a table of all indexed domains and their page counts;
@@ -47,6 +49,8 @@ const DEFAULT_LIMIT      = 10
 
 const parseDSL = text => {
   const specs   = []
+  const rosterRefs = []     // ROSTER site/slug — roster pages whose sites join the scope
+  const farms   = []        // FARM domain — peer farms asked to continue the search
   let threshold = null
   let limit     = null
   let mode      = 'search'  // default: interactive search form
@@ -92,6 +96,16 @@ const parseDSL = text => {
       continue
     }
     if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
+    if (isCmd(upper, 'ROSTER')) {
+      const ref = val(line, 'ROSTER')
+      if (ref) rosterRefs.push(ref)
+      continue
+    }
+    if (isCmd(upper, 'FARM')) {
+      const peer = val(line, 'FARM')
+      if (peer) farms.push(peer)
+      continue
+    }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -118,6 +132,8 @@ const parseDSL = text => {
   return {
     mode,
     specs,
+    rosterRefs,
+    farms,
     threshold: threshold ?? DEFAULT_THRESHOLD,
     limit:     limit     ?? DEFAULT_LIMIT,
     live,
@@ -167,6 +183,63 @@ const resolveDomains = async (specs, origin) => {
   }
   return result
 }
+
+// ── Roster resolution ─────────────────────────────────────────────────────────
+// ROSTER site/slug resolves a roster page into domain names, following the
+// roster plugin's own line semantics: bare domains are sites; category and
+// blank lines are skipped; nested `ROSTER site/slug` includes another roster
+// page; `REFERENCES site/slug` collects the .site of a page's reference items.
+// Includes are followed transitively with a visited-set loop guard.
+
+const SITE_LINE    = /^([a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+|localhost)(:\d+)?$/
+const ROSTER_LINE  = /^ROSTER ([A-Za-z0-9.\-:]+\/[a-z0-9-]+)$/
+const REFS_LINE    = /^REFERENCES ([A-Za-z0-9.\-:]+\/[a-z0-9-]+)$/
+
+const fetchPage = async ref => {                 // ref = site/slug
+  const i = ref.indexOf('/')
+  const res = await fetch(`//${ref.slice(0, i)}/${ref.slice(i + 1)}.json`)
+  if (!res.ok) throw new Error(`roster page ${ref} failed: ${res.status}`)
+  return res.json()
+}
+
+const resolveRoster = async (ref, out, visited) => {
+  if (visited.has(ref)) return
+  visited.add(ref)
+  let page
+  try { page = await fetchPage(ref) } catch (e) { console.warn(e.message); return }
+  for (const item of page.story || []) {
+    if (item.type !== 'roster') continue
+    for (const raw of (item.text || '').split(/\r?\n/)) {
+      const line = raw.trim()
+      if (!line) continue
+      const site = line.match(SITE_LINE)
+      if (site) { out.add(site[0]); continue }
+      const nested = line.match(ROSTER_LINE)
+      if (nested) { await resolveRoster(nested[1], out, visited); continue }
+      const refs = line.match(REFS_LINE)
+      if (refs) {
+        try {
+          const refPage = await fetchPage(refs[1])
+          for (const it of refPage.story || []) {
+            if (it.type === 'reference' && it.site) out.add(it.site)
+          }
+        } catch (e) { console.warn(e.message) }
+      }
+      // anything else is a category name — skipped
+    }
+  }
+}
+
+const resolveRosters = async rosterRefs => {
+  const out = new Set()
+  const visited = new Set()
+  for (const ref of rosterRefs) await resolveRoster(ref, out, visited)
+  return [...out]
+}
+
+// Effective specs: DSL specs plus any domains contributed by ROSTER lines.
+const effectiveSpecs = async (specs, rosterRefs) =>
+  rosterRefs.length ? [...specs, ...await resolveRosters(rosterRefs)] : specs
 
 // ── Vector loading ────────────────────────────────────────────────────────────
 
@@ -364,11 +437,13 @@ export const emit = (div, item) => {
 }
 
 export const bind = (div, item) => {
-  const { mode, specs, threshold, limit, live, force, ghostUrl, thresholdSet } =
+  const { mode, specs, rosterRefs, farms, threshold, limit, live, force, ghostUrl, thresholdSet } =
     parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
   const cache   = live ? null : readCache(item)
+  // Scope = DSL specs plus roster-page domains (resolved once, shared by modes)
+  const specsP  = effectiveSpecs(specs, rosterRefs)
 
   // Standardised pre-search status: what will run, over how much, with what config.
   // e.g. "Report ready — 18,583 pages across 267 domains · threshold 0.68 · limit 20 · LIVE"
@@ -400,7 +475,6 @@ export const bind = (div, item) => {
 
   if (mode === 'list') {
     const listDiv = div.find('.sim-list')[0]
-    const patterns = specs.length ? specs.join(',') : '*'
 
     const renderList = (domains, ts) => {
       const totalPages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
@@ -423,6 +497,8 @@ export const bind = (div, item) => {
     } else {
       ;(async () => {
         try {
+          const eff = await specsP
+          const patterns = eff.length ? eff.join(',') : '*'
           const url = `${origin}/system/indexed-domains.json?pattern=${encodeURIComponent(patterns)}&limit=${limit}`
           const res = await fetch(url)
           if (!res.ok) throw new Error(`indexed-domains failed: ${res.status}`)
@@ -461,7 +537,7 @@ export const bind = (div, item) => {
           const currentSlug   = slugify(pageTitle)
           const currentDomain = window.location.hostname
 
-          const domainEntries = await loadDomainEntries(specs, origin)
+          const domainEntries = await loadDomainEntries(await specsP, origin)
           const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
           status.textContent = `Searching ${total.toLocaleString()} pages…`
 
@@ -544,9 +620,11 @@ export const bind = (div, item) => {
     // status line shows scope and config before any search is issued.
     ;(async () => {
       try {
-        const domains = await resolveDomains(specs.length ? specs : ['*'], origin)
+        const eff = await specsP
+        const domains = await resolveDomains(eff.length ? eff : ['*'], origin)
         const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
         readyLine = configSummary('Report ready', pages, domains.length)
+        if (farms.length) readyLine += ` · +${farms.length} peer farm${farms.length > 1 ? 's' : ''}`
         status.textContent = readyLine
       } catch (e) {
         status.textContent = `Domain listing unavailable: ${e.message}`
@@ -557,9 +635,11 @@ export const bind = (div, item) => {
       const query = input.value.trim()
       if (!query) return
       btn.disabled = true
-      status.textContent = 'Generating report…'
+      status.textContent = farms.length ? 'Generating report (asking peer farms)…' : 'Generating report…'
       try {
-        const body = { query, domains: specs.length ? specs : ['*'], limit, live }
+        const eff = await specsP
+        const body = { query, domains: eff.length ? eff : ['*'], limit, live }
+        if (farms.length) body.farms = farms
         if (thresholdSet) body.threshold = threshold
         const res = await fetch(`${origin}/system/search-report.json`, {
           method: 'POST',
@@ -595,9 +675,11 @@ export const bind = (div, item) => {
       btn.disabled = true
       status.textContent = 'Searching live site indexes…'
       try {
-        const pattern = encodeURIComponent((specs.length ? specs : ['*']).join(','))
+        const eff = await specsP
+        const pattern = encodeURIComponent((eff.length ? eff : ['*']).join(','))
+        const farmsParam = farms.length ? `&farms=${encodeURIComponent(farms.join(','))}` : ''
         const res = await fetch(
-          `${origin}/system/farm-search.json?q=${encodeURIComponent(query)}&pattern=${pattern}&limit=${limit}`)
+          `${origin}/system/farm-search.json?q=${encodeURIComponent(query)}&pattern=${pattern}&limit=${limit}${farmsParam}`)
         if (!res.ok) throw new Error(`farm-search failed: ${res.status}`)
         const page = await res.json()
         window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
@@ -622,7 +704,7 @@ export const bind = (div, item) => {
     ;(async () => {
       try {
         if (!cache) status.textContent = 'Resolving domains…'
-        domainEntries = await loadDomainEntries(specs, origin)
+        domainEntries = await loadDomainEntries(await specsP, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
         status.textContent = configSummary('Author ready', total, domainEntries.length)
       } catch (e) {
@@ -694,7 +776,7 @@ export const bind = (div, item) => {
     ;(async () => {
       try {
         if (!cache) status.textContent = 'Resolving domains…'
-        domainEntries = await loadDomainEntries(specs, origin)
+        domainEntries = await loadDomainEntries(await specsP, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
         status.textContent = configSummary('Search ready', total, domainEntries.length)
       } catch (e) {

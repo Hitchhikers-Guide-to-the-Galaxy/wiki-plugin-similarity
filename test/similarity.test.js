@@ -9,6 +9,8 @@ const DEFAULT_LIMIT      = 10
 
 const parseDSL = text => {
   const specs = []
+  const rosterRefs = []
+  const farms = []
   let threshold = null, limit = null, mode = 'search', live = false, force = false
   let ghostUrl = null, label = null
   const isCmd = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
@@ -37,6 +39,20 @@ const parseDSL = text => {
       continue
     }
     if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
+    if (isCmd(upper, 'KEYWORD')) {
+      if (mode === 'search') mode = 'keyword'
+      continue
+    }
+    if (isCmd(upper, 'ROSTER')) {
+      const ref = val(line, 'ROSTER')
+      if (ref) rosterRefs.push(ref)
+      continue
+    }
+    if (isCmd(upper, 'FARM')) {
+      const peer = val(line, 'FARM')
+      if (peer) farms.push(peer)
+      continue
+    }
     if (isCmd(upper, 'LIST')) {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
@@ -58,7 +74,7 @@ const parseDSL = text => {
     }
     specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
   }
-  return { mode, specs, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, force, ghostUrl, label, thresholdSet: threshold !== null }
+  return { mode, specs, rosterRefs, farms, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, force, ghostUrl, label, thresholdSet: threshold !== null }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
@@ -281,5 +297,33 @@ describe('cosineScan', () => {
 
   it('handles empty domain list', () => {
     assert.deepEqual(cosineScan([1, 0, 0], [], opts), [])
+  })
+})
+
+describe('parseDSL — ROSTER and FARM (federation)', () => {
+  it('collects roster refs without changing mode', () => {
+    const r = parseDSL('KEYWORD\nROSTER localhost/search-rosters')
+    assert.equal(r.mode, 'keyword')
+    assert.deepEqual(r.rosterRefs, ['localhost/search-rosters'])
+    assert.deepEqual(r.specs, [])
+  })
+  it('collects multiple FARM peers', () => {
+    const r = parseDSL('REPORT\nFARM search.fedwiki.club\nFARM tv.fab.fish')
+    assert.equal(r.mode, 'report')
+    assert.deepEqual(r.farms, ['search.fedwiki.club', 'tv.fab.fish'])
+  })
+  it('tolerates colons after the keyword', () => {
+    const r = parseDSL('ROSTER: localhost/peers\nFARM: peer.example')
+    assert.deepEqual(r.rosterRefs, ['localhost/peers'])
+    assert.deepEqual(r.farms, ['peer.example'])
+  })
+  it('does not confuse domains starting with keyword letters', () => {
+    const r = parseDSL('farmville.example.com\nrosterize.example.org')
+    assert.deepEqual(r.specs, ['farmville.example.com', 'rosterize.example.org'])
+    assert.deepEqual(r.farms, [])
+    assert.deepEqual(r.rosterRefs, [])
+  })
+  it('KEYWORD sets keyword mode', () => {
+    assert.equal(parseDSL('KEYWORD').mode, 'keyword')
   })
 })

@@ -59,8 +59,10 @@ const loadDomainIndex = (farm, domain) => {
 
 // ── Search across domains ─────────────────────────────────────────────────────
 
-const searchFarm = (farms, patterns, restricted, query, limit) => {
-  const domains = listDomains(farms, patterns, restricted, 'status/site-index.json')
+const searchFarm = (farms, patterns, restricted, query, limit, exclude = null) => {
+  let domains = listDomains(farms, patterns, restricted, 'status/site-index.json')
+  // Peer answers must never carry restricted sites (see peer-guard.js)
+  if (exclude) domains = domains.filter(d => !exclude.has(d.domain))
   const results = []
   let searched = 0
   for (const { farm, domain } of domains) {

@@ -36,10 +36,17 @@ const fs   = require('node:fs')
 const path = require('node:path')
 const http = require('node:http')
 
+const crypto = require('node:crypto')
+const https  = require('node:https')
+
 const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm-lib')
 const embedder     = require('./embedder')
 const { buildReport } = require('./search-report')
 const { searchFarm, keywordReportPage } = require('./farm-search')
+const { searchGalaxy } = require('./galaxy-search')
+const { readPeerRoster, makeDedup, makeBucket, guardEnvelope } = require('./peer-guard')
+
+const MODEL_META = { model: 'BAAI/bge-small-en-v1.5', dim: 384 }
 
 // Optional external embedder (proxy) — unset means embed in-process.
 const EMBED_URL   = process.env.WIKI_EMBED_URL || null
@@ -103,6 +110,71 @@ const readBody = req =>
     req.on('error', reject)
   })
 
+// POST JSON to a peer farm's plugin server. Public peers speak https;
+// *.localhost peers speak http via a loopback lookup (Node's resolver does
+// not know RFC 6761 subdomains). Public domains follow /etc/hosts, so
+// Offline Edit Mode routes peer calls to the local mirror by construction.
+const postToPeer = (peer, routePath, body, timeoutMs = 30_000) =>
+  new Promise((resolve, reject) => {
+    const isLocal = peer.endsWith('.localhost') || peer.startsWith('localhost')
+    const mod = isLocal ? http : https
+    const payload = JSON.stringify(body)
+    const opts = {
+      hostname: peer.split(':')[0],
+      port: peer.includes(':') ? peer.split(':')[1] : (isLocal ? 80 : 443),
+      path: routePath,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+      timeout: timeoutMs,
+    }
+    if (isLocal) opts.lookup = (h, o, cb) => cb(null, [{ address: '127.0.0.1', family: 4 }])
+    const req = mod.request(opts, res => {
+      let data = ''
+      res.on('data', chunk => { data += chunk })
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(data) }) }
+        catch {
+          resolve({ status: res.statusCode,
+            body: { error: `no similarity server answered (${res.statusCode})` } })
+        }
+      })
+    })
+    req.on('timeout', () => { req.destroy(new Error('peer timeout')) })
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+
+// Append peer farms' results to a locally-built report page. Each peer gets
+// its own section; provenance rides on the reference items' site field.
+// Scores merge visually only when the peer declares the same embedding model.
+const appendPeerSections = (page, peerOutcomes) => {
+  const mk = () => crypto.randomBytes(8).toString('hex')
+  for (const { peer, status, body } of peerOutcomes) {
+    if (status === 200 && body.page) {
+      const sameModel = body.meta && body.meta.model === MODEL_META.model
+      page.story.push({
+        type: 'markdown', id: mk(),
+        text: `# From ${peer}\n\n<small>${body.meta?.count ?? '?'} results — ` +
+          `model ${body.meta?.model || 'undeclared'}${sameModel ? '' :
+            ' (different model: scores not comparable with local results)'}</small>`,
+      })
+      for (const item of body.page.story || []) {
+        if (item.type === 'reference') page.story.push({ ...item, id: mk() })
+      }
+    } else {
+      page.story.push({
+        type: 'markdown', id: mk(),
+        text: `<small>Peer ${peer}: ${body?.error || `failed (${status})`}</small>`,
+      })
+    }
+  }
+  return page
+}
+
 // ── startServer — called by wiki-server/lib/plugins.js ────────────────────────
 
 const startServer = ({ argv, app }) => {
@@ -132,8 +204,25 @@ const startServer = ({ argv, app }) => {
 
   for (const route of ['/system/indexed-domains.json', '/system/semantic-vectors.json',
                        '/system/embed.json', '/system/search-report.json',
-                       '/system/farm-search.json', '/system/build-index.json']) {
+                       '/system/farm-search.json', '/system/build-index.json',
+                       '/system/galaxy-search.json', '/system/peer-search.json']) {
     app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
+  }
+
+  // FARM prototype guards (shared across peer requests)
+  const isDuplicate = makeDedup()
+  const takeToken   = makeBucket()
+
+  const askPeers = async (peers, envelope) => {
+    const outcomes = await Promise.all(peers.map(async peer => {
+      try {
+        const { status, body } = await postToPeer(peer, '/system/peer-search.json', envelope)
+        return { peer, status, body }
+      } catch (e) {
+        return { peer, status: 0, body: { error: e.message } }
+      }
+    }))
+    return outcomes
   }
 
   // ── GET /system/indexed-domains.json?pattern=glob1,glob2 ──────────────────
@@ -186,6 +275,7 @@ const startServer = ({ argv, app }) => {
   })
 
   // ── POST /system/search-report.json ────────────────────────────────────────
+  // body.farms: peer farms asked to continue the search (FARM prototype).
   app.post('/system/search-report.json', async (req, res) => {
     cors(res)
     try {
@@ -194,6 +284,14 @@ const startServer = ({ argv, app }) => {
       const page = await buildReport(
         body.query, body.domains || ['*'], body.limit || 10, ctx,
         body.threshold ?? null, !!body.live)
+      if (Array.isArray(body.farms) && body.farms.length) {
+        const envelope = {
+          query: body.query, kind: 'report', limit: body.limit || 10,
+          hops: 0, requestId: crypto.randomBytes(8).toString('hex'),
+          origin: req.hostname,
+        }
+        appendPeerSections(page, await askPeers(body.farms.slice(0, 8), envelope))
+      }
       res.json(page)
     } catch (e) {
       console.error('[wiki-plugin-similarity] search-report error:', e.message)
@@ -201,20 +299,100 @@ const startServer = ({ argv, app }) => {
     }
   })
 
-  // ── GET /system/farm-search.json?q=…&pattern=…&limit=… ────────────────────
-  app.get('/system/farm-search.json', (req, res) => {
+  // ── GET /system/farm-search.json?q=…&pattern=…&limit=…&farms=… ────────────
+  // Explicit sites absent from farm disk are searched over HTTP via the
+  // galaxy cache; ?farms= asks peer farms to continue the search.
+  app.get('/system/farm-search.json', async (req, res) => {
     cors(res)
     const q = (req.query.q || '').trim()
     if (!q) return res.status(400).json({ error: 'q parameter required' })
     const patterns = (req.query.pattern || '*').split(',').map(p => p.trim()).filter(Boolean)
     const limit = parseInt(req.query.limit) || 10
     try {
-      const outcome = searchFarm(farms, patterns, restricted, q, limit)
+      // Split explicit hostnames into on-disk domains and off-farm galaxy sites
+      const isExplicit = p => !p.includes('*') && !p.includes('?') &&
+        !['PUBLIC', 'LOCAL', 'PRIVATE'].includes(p) && p.includes('.')
+      const galaxySites = patterns.filter(p =>
+        isExplicit(p) && !findInFarms(farms, p, 'status/site-index.json'))
+      const localPatterns = patterns.filter(p => !galaxySites.includes(p))
+
+      const outcome = localPatterns.length
+        ? searchFarm(farms, localPatterns, restricted, q, limit)
+        : { results: [], searched: 0, matched: 0 }
+      if (galaxySites.length) {
+        const remote = await searchGalaxy(galaxySites, q, limit)
+        outcome.results = [...outcome.results, ...remote.results]
+          .sort((a, b) => b.score - a.score).slice(0, limit)
+        outcome.searched += remote.searched
+        outcome.matched += remote.matched
+      }
       if (req.query.format === 'flat') return res.json(outcome)
-      res.json(keywordReportPage(q, outcome, limit, patterns))
+
+      const page = keywordReportPage(q, outcome, limit, patterns)
+      const peers = (req.query.farms || '').split(',').map(s => s.trim()).filter(Boolean)
+      if (peers.length) {
+        const envelope = {
+          query: q, kind: 'keyword', limit,
+          hops: 0, requestId: crypto.randomBytes(8).toString('hex'),
+          origin: req.hostname,
+        }
+        appendPeerSections(page, await askPeers(peers.slice(0, 8), envelope))
+      }
+      res.json(page)
     } catch (e) {
       console.error('[wiki-plugin-similarity] farm-search error:', e.message)
       res.status(500).json({ error: `farm-search failed: ${e.message}` })
+    }
+  })
+
+  // ── GET /system/galaxy-search.json?q=…&sites=…&limit=… ────────────────────
+  // Keyword search over arbitrary federation sites — reads their own per-edit
+  // site-index.json over HTTP with a conditional-GET disk cache.
+  app.get('/system/galaxy-search.json', async (req, res) => {
+    cors(res)
+    const q = (req.query.q || '').trim()
+    const sites = (req.query.sites || '').split(',').map(s => s.trim()).filter(Boolean)
+    if (!q) return res.status(400).json({ error: 'q parameter required' })
+    if (!sites.length) return res.status(400).json({ error: 'sites parameter required' })
+    const limit = parseInt(req.query.limit) || 10
+    try {
+      const outcome = await searchGalaxy(sites, q, limit)
+      if (req.query.format === 'flat') return res.json(outcome)
+      res.json(keywordReportPage(q, outcome, limit, sites))
+    } catch (e) {
+      console.error('[wiki-plugin-similarity] galaxy-search error:', e.message)
+      res.status(500).json({ error: `galaxy-search failed: ${e.message}` })
+    }
+  })
+
+  // ── POST /system/peer-search.json — FARM prototype (experimental) ─────────
+  // Another farm asks this one to continue a search on its own sites. Guarded
+  // by the serving site's search-peers roster page, a hop limit, request-id
+  // dedup and a per-origin rate limit. Restricted (PRIVATE) sites are always
+  // excluded from peer answers.
+  app.post('/system/peer-search.json', async (req, res) => {
+    cors(res)
+    try {
+      const envelope = await readBody(req)
+      const allowed = readPeerRoster(farms, req.hostname)
+      const verdict = guardEnvelope(envelope, { allowed, isDuplicate, takeToken })
+      if (!verdict.ok) return res.status(verdict.code).json({ error: verdict.error })
+      if (!envelope.query) return res.status(400).json({ error: 'query required' })
+
+      const limit = envelope.limit || 10
+      let page
+      if (envelope.kind === 'keyword') {
+        const outcome = searchFarm(farms, ['*'], restricted, envelope.query, limit, restricted)
+        page = keywordReportPage(envelope.query, outcome, limit, ['*'])
+      } else {
+        page = await buildReport(envelope.query, ['*'], limit,
+          { ...ctx, exclude: restricted })
+      }
+      const count = page.story.filter(i => i.type === 'reference').length
+      res.json({ page, meta: { ...MODEL_META, farm: req.hostname, count } })
+    } catch (e) {
+      console.error('[wiki-plugin-similarity] peer-search error:', e.message)
+      res.status(500).json({ error: `peer-search failed: ${e.message}` })
     }
   })
 
