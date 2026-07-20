@@ -23,6 +23,13 @@
 //     Proxy to the farm indexer (WIKI_INDEXER_URL) when configured; heavy
 //     embedding is the indexer's job (Pi5 on the Hitchhikers farm), never
 //     the wiki server's.
+//   GET  /system/peer-hello.json
+//     Capability probe: plugin version, embedding model, federation status.
+//     404 here means the plugin is absent from the farm.
+//   POST /system/peer-search.json
+//     Federated peer search. Two keys: the admin's WIKI_PEER_FEDERATION
+//     ceiling (off|grants|open) and each site's Federated Farm Search
+//     grants page (FROM lines). Scope = union of granting sites only.
 //
 // Farm root is derived from argv.status ({farm}/{domain}/status); extra farm
 // roots come from WIKI_EXTRA_FARMS (colon-separated absolute paths).
@@ -44,9 +51,12 @@ const embedder     = require('./embedder')
 const { buildReport } = require('./search-report')
 const { searchFarm, keywordReportPage } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
-const { readPeerRoster, makeDedup, makeBucket, guardEnvelope } = require('./peer-guard')
+const { ceiling, grantingDomains, makeDedup, makeBucket, guardEnvelope } = require('./peer-guard')
 
 const MODEL_META = { model: 'BAAI/bge-small-en-v1.5', dim: 384 }
+const PLUGIN_VERSION = (() => {
+  try { return require('../package.json').version } catch { return 'unknown' }
+})()
 
 // Optional external embedder (proxy) — unset means embed in-process.
 const EMBED_URL   = process.env.WIKI_EMBED_URL || null
@@ -205,16 +215,74 @@ const startServer = ({ argv, app }) => {
   for (const route of ['/system/indexed-domains.json', '/system/semantic-vectors.json',
                        '/system/embed.json', '/system/search-report.json',
                        '/system/farm-search.json', '/system/build-index.json',
-                       '/system/galaxy-search.json', '/system/peer-search.json']) {
+                       '/system/galaxy-search.json', '/system/peer-search.json',
+                       '/system/peer-hello.json']) {
     app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
   }
 
-  // FARM prototype guards (shared across peer requests)
-  const isDuplicate = makeDedup()
-  const takeToken   = makeBucket()
+  // Peer federation guards (shared across peer requests). Rate limits are
+  // keyed by remote IP — never by the asserted origin — plus a global cap.
+  const isDuplicate     = makeDedup()
+  const takeIpToken     = makeBucket()
+  const takeGlobalToken = makeBucket({ capacity: 120, refillPerSec: 2, maxKeys: 1 })
+
+  const requestIp = req =>
+    (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+    req.socket.remoteAddress || 'unknown'
+
+  // GET JSON from a peer (hello probe) — same transport rules as postToPeer.
+  const getFromPeer = (peer, routePath, timeoutMs = 10_000) =>
+    new Promise((resolve, reject) => {
+      const isLocal = peer.endsWith('.localhost') || peer.startsWith('localhost')
+      const mod = isLocal ? http : https
+      const opts = {
+        hostname: peer.split(':')[0],
+        port: peer.includes(':') ? peer.split(':')[1] : (isLocal ? 80 : 443),
+        path: routePath,
+        timeout: timeoutMs,
+      }
+      if (isLocal) opts.lookup = (h, o, cb) => cb(null, [{ address: '127.0.0.1', family: 4 }])
+      const req = mod.get(opts, res => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, body: JSON.parse(data) }) }
+          catch { resolve({ status: res.statusCode, body: null }) }
+        })
+      })
+      req.on('timeout', () => { req.destroy(new Error('peer timeout')) })
+      req.on('error', reject)
+    })
+
+  // Hello probe cache: peer → {at, ok, body}. TTL 1h, small LRU.
+  const helloCache = new Map()
+  const HELLO_TTL = 60 * 60_000
+
+  const probePeer = async peer => {
+    const hit = helloCache.get(peer)
+    if (hit && Date.now() - hit.at < HELLO_TTL) return hit
+    let entry
+    try {
+      const { status, body } = await getFromPeer(peer, '/system/peer-hello.json')
+      entry = { at: Date.now(), ok: status === 200 && body && body.plugin, body }
+    } catch {
+      entry = { at: Date.now(), ok: false, body: null }
+    }
+    helloCache.set(peer, entry)
+    if (helloCache.size > 200) helloCache.delete(helloCache.keys().next().value)
+    return entry
+  }
 
   const askPeers = async (peers, envelope) => {
     const outcomes = await Promise.all(peers.map(async peer => {
+      const hello = await probePeer(peer)
+      if (!hello.ok) {
+        return { peer, status: 0,
+          body: { error: 'peer does not answer hello — no similarity federation there' } }
+      }
+      if (hello.body.federation && hello.body.federation.enabled === false) {
+        return { peer, status: 0, body: { error: 'peer has federation switched off' } }
+      }
       try {
         const { status, body } = await postToPeer(peer, '/system/peer-search.json', envelope)
         return { peer, status, body }
@@ -365,31 +433,67 @@ const startServer = ({ argv, app }) => {
     }
   })
 
-  // ── POST /system/peer-search.json — FARM prototype (experimental) ─────────
-  // Another farm asks this one to continue a search on its own sites. Guarded
-  // by the serving site's search-peers roster page, a hop limit, request-id
-  // dedup and a per-origin rate limit. Restricted (PRIVATE) sites are always
-  // excluded from peer answers.
+  // ── GET /system/peer-hello.json — capability probe ────────────────────────
+  // "Does this farm run the Similarity plugin, and does it federate?"
+  // A 404 (or HTML) here means the plugin is absent. Static JSON, no embedder
+  // cost; does not advertise any FROM list.
+  app.get('/system/peer-hello.json', (req, res) => {
+    cors(res)
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    res.json({
+      plugin: 'wiki-plugin-similarity',
+      version: PLUGIN_VERSION,
+      ...MODEL_META,
+      site: req.hostname,
+      federation: {
+        enabled: ceiling() !== 'off',
+        kinds: ['report', 'keyword'],
+        hopsAccepted: 0,
+      },
+    })
+  })
+
+  // ── POST /system/peer-search.json — federated peer search ────────────────
+  // Two keys must turn: the farm admin's WIKI_PEER_FEDERATION ceiling, and
+  // each site's own Federated Farm Search grants page. The answer scope for
+  // an origin is exactly the union of sites that granted it — one site's
+  // grant never opens the whole farm. Restricted (login-to-view) sites are
+  // excluded unconditionally. Abuse guards: hop limit, request-id dedup,
+  // IP-keyed + global rate limits.
   app.post('/system/peer-search.json', async (req, res) => {
     cors(res)
     try {
       const envelope = await readBody(req)
-      const allowed = readPeerRoster(farms, req.hostname)
-      const verdict = guardEnvelope(envelope, { allowed, isDuplicate, takeToken })
+      const verdict = guardEnvelope(envelope,
+        { ip: requestIp(req), isDuplicate, takeIpToken, takeGlobalToken })
       if (!verdict.ok) return res.status(verdict.code).json({ error: verdict.error })
       if (!envelope.query) return res.status(400).json({ error: 'query required' })
+
+      const origin = envelope.origin.trim()
+      const allDomains = listDomains(farms, ['*'], restricted)
+        .filter(d => !restricted.has(d.domain))
+      const granted = grantingDomains(allDomains, origin)
+      if (!granted.length) {
+        return res.status(403).json({
+          error: `no site on this farm grants federated search to ${origin}`,
+          hint: 'a site opts in with FROM lines on its Federated Farm Search page',
+        })
+      }
+      const grantedNames = granted.map(d => d.domain)
 
       const limit = envelope.limit || 10
       let page
       if (envelope.kind === 'keyword') {
-        const outcome = searchFarm(farms, ['*'], restricted, envelope.query, limit, restricted)
-        page = keywordReportPage(envelope.query, outcome, limit, ['*'])
+        const outcome = searchFarm(farms, grantedNames, restricted,
+          envelope.query, limit, restricted)
+        page = keywordReportPage(envelope.query, outcome, limit, grantedNames)
       } else {
-        page = await buildReport(envelope.query, ['*'], limit,
+        page = await buildReport(envelope.query, grantedNames, limit,
           { ...ctx, exclude: restricted })
       }
       const count = page.story.filter(i => i.type === 'reference').length
-      res.json({ page, meta: { ...MODEL_META, farm: req.hostname, count } })
+      res.json({ page, meta: { ...MODEL_META, version: PLUGIN_VERSION,
+        farm: req.hostname, sites: grantedNames.length, count } })
     } catch (e) {
       console.error('[wiki-plugin-similarity] peer-search error:', e.message)
       res.status(500).json({ error: `peer-search failed: ${e.message}` })

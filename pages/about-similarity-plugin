@@ -9,7 +9,7 @@
     {
       "type": "markdown",
       "id": "28edff984cc5334d",
-      "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE):\n\n- (no keyword) — interactive semantic search form\n- `SIMILAR: high|medium|low` — ambient: pages similar to this page\n- `REPORT` — server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` — galactic MiniSearch over live site-index.json files\n- `LIST` — table of indexed domains\n- `AUTHOR` — search results as a draggable ghost page\n- `BUILD` / `FORCE` — proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` — open any page-json as a ghost page\n- `ROSTER site/slug` — add a roster page's sites to the scope (off-farm sites searched via the galaxy cache)\n- `FARM domain` — ask a peer farm to continue the search (experimental; requires the peer's `search-peers` roster to allow you)\n- `THRESHOLD: 0.72` · `LIMIT: 8` · `LIVE` — tuning"
+      "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE):\n\n- (no keyword) — interactive semantic search form\n- `SIMILAR: high|medium|low` — ambient: pages similar to this page\n- `REPORT` — server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` — galactic MiniSearch over live site-index.json files\n- `LIST` — table of indexed domains\n- `AUTHOR` — search results as a draggable ghost page\n- `BUILD` / `FORCE` — proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` — open any page-json as a ghost page\n- `ROSTER site/slug` — add a roster page's sites to the scope (off-farm sites searched via the galaxy cache)\n- `FARM domain` — ask a peer farm to continue the search. The peer answers from exactly the sites whose own [[Federated Farm Search]] page grants your origin (`FROM` lines; `FROM *` needs the peer admin's `WIKI_PEER_FEDERATION=open`)\n- `THRESHOLD: 0.72` · `LIMIT: 8` · `LIVE` — tuning"
     },
     {
       "type": "markdown",
@@ -54,12 +54,12 @@
     {
       "type": "markdown",
       "id": "d9a96dfebb9d1692",
-      "text": "## Server Routes\n\nAll same-origin, registered by the plugin's server component:\n\n- `GET /system/indexed-domains.json?pattern=`\n- `GET /system/semantic-vectors.json?domain=`\n- `GET /system/embed.json?text=`\n- `POST /system/search-report.json`\n- `GET /system/farm-search.json?q=&pattern=&limit=`\n- `GET /system/build-index.json?domains=` (proxied to the farm indexer)\n- `GET /system/galaxy-search.json?q=&sites=` — keyword search over off-farm federation sites\n- `POST /system/peer-search.json` — answer another farm's search (guarded: allowlist roster, hop limit, replay dedup, rate limit; restricted sites always excluded)\n\nIndexes are `status/semantic-vectors.json` per domain — built by the farm indexer, distributed by sync, read from farm disk. Keyword search reads each site's per-edit `status/site-index.json`; no separate index is built. Query embedding is BAAI bge-small-en-v1.5, 384-dim, CLS-pooled, unit-normalised — byte-compatible with the index builder."
+      "text": "## Server Routes\n\nAll same-origin, registered by the plugin's server component:\n\n- `GET /system/indexed-domains.json?pattern=`\n- `GET /system/semantic-vectors.json?domain=`\n- `GET /system/embed.json?text=`\n- `POST /system/search-report.json`\n- `GET /system/farm-search.json?q=&pattern=&limit=`\n- `GET /system/build-index.json?domains=` (proxied to the farm indexer)\n- `GET /system/galaxy-search.json?q=&sites=` — keyword search over off-farm federation sites\n- `GET /system/peer-hello.json` — capability probe: version, model, federation status (404 = plugin absent)\n- `POST /system/peer-search.json` — answer another farm's search. Two keys: the admin's `WIKI_PEER_FEDERATION` ceiling (off / grants / open) and each site's Federated Farm Search grants page; scope = union of granting sites; hop limit, replay dedup, IP-keyed + global rate limits; restricted sites always excluded\n\nIndexes are `status/semantic-vectors.json` per domain — built by the farm indexer, distributed by sync, read from farm disk. Keyword search reads each site's per-edit `status/site-index.json`; no separate index is built. Query embedding is BAAI bge-small-en-v1.5, 384-dim, CLS-pooled, unit-normalised — byte-compatible with the index builder."
     },
     {
       "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.6.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] — architecture, indexing, freshness."
+      "text": "**Version:** 0.7.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] — architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
@@ -163,6 +163,36 @@
         "text": "**Version:** 0.6.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] — architecture, indexing, freshness."
       },
       "date": 1783800718188
+    },
+    {
+      "type": "edit",
+      "id": "28edff984cc5334d",
+      "item": {
+        "type": "markdown",
+        "id": "28edff984cc5334d",
+        "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE):\n\n- (no keyword) — interactive semantic search form\n- `SIMILAR: high|medium|low` — ambient: pages similar to this page\n- `REPORT` — server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` — galactic MiniSearch over live site-index.json files\n- `LIST` — table of indexed domains\n- `AUTHOR` — search results as a draggable ghost page\n- `BUILD` / `FORCE` — proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` — open any page-json as a ghost page\n- `ROSTER site/slug` — add a roster page's sites to the scope (off-farm sites searched via the galaxy cache)\n- `FARM domain` — ask a peer farm to continue the search. The peer answers from exactly the sites whose own [[Federated Farm Search]] page grants your origin (`FROM` lines; `FROM *` needs the peer admin's `WIKI_PEER_FEDERATION=open`)\n- `THRESHOLD: 0.72` · `LIMIT: 8` · `LIVE` — tuning"
+      },
+      "date": 1784591495272
+    },
+    {
+      "type": "edit",
+      "id": "d9a96dfebb9d1692",
+      "item": {
+        "type": "markdown",
+        "id": "d9a96dfebb9d1692",
+        "text": "## Server Routes\n\nAll same-origin, registered by the plugin's server component:\n\n- `GET /system/indexed-domains.json?pattern=`\n- `GET /system/semantic-vectors.json?domain=`\n- `GET /system/embed.json?text=`\n- `POST /system/search-report.json`\n- `GET /system/farm-search.json?q=&pattern=&limit=`\n- `GET /system/build-index.json?domains=` (proxied to the farm indexer)\n- `GET /system/galaxy-search.json?q=&sites=` — keyword search over off-farm federation sites\n- `GET /system/peer-hello.json` — capability probe: version, model, federation status (404 = plugin absent)\n- `POST /system/peer-search.json` — answer another farm's search. Two keys: the admin's `WIKI_PEER_FEDERATION` ceiling (off / grants / open) and each site's Federated Farm Search grants page; scope = union of granting sites; hop limit, replay dedup, IP-keyed + global rate limits; restricted sites always excluded\n\nIndexes are `status/semantic-vectors.json` per domain — built by the farm indexer, distributed by sync, read from farm disk. Keyword search reads each site's per-edit `status/site-index.json`; no separate index is built. Query embedding is BAAI bge-small-en-v1.5, 384-dim, CLS-pooled, unit-normalised — byte-compatible with the index builder."
+      },
+      "date": 1784591495272
+    },
+    {
+      "type": "edit",
+      "id": "21eb5354d2adb29e",
+      "item": {
+        "type": "markdown",
+        "id": "21eb5354d2adb29e",
+        "text": "**Version:** 0.7.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] — architecture, indexing, freshness."
+      },
+      "date": 1784591495272
     }
   ]
 }
