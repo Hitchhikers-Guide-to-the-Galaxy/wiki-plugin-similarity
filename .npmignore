@@ -1,0 +1,5 @@
+# Runtime data must not ship in the package.
+# npm's "files" allowlist includes dirs wholesale; this excludes the
+# galaxy-search cache that grows inside server/ at runtime (42MB of cached
+# off-farm site indexes was being published with 0.7.0/0.8.0).
+server/.galaxy-cache

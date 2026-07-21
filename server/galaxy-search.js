@@ -13,14 +13,18 @@
 // whatever the cache holds.
 
 const fs    = require('node:fs')
+const os    = require('node:os')
 const path  = require('node:path')
 const https = require('node:https')
 const http  = require('node:http')
 
 const MiniSearch = require('minisearch')
 
+// Never inside the package dir: npm's "files" allowlist packs everything under
+// server/ (a 42MB cache shipped inside 0.7.0/0.8.0 tarballs), and npm updates
+// wipe it. The cache is disposable — a fresh dir just refetches on demand.
 const CACHE_DIR = process.env.WIKI_GALAXY_CACHE ||
-  path.join(__dirname, '.galaxy-cache')
+  path.join(os.homedir() || os.tmpdir(), '.cache', 'wiki-similarity', 'galaxy')
 const TTL_MS      = parseInt(process.env.WIKI_GALAXY_TTL_MS) || 5 * 60_000
 const CONCURRENCY = 8
 const LRU_MAX     = 50   // deserialized indexes held in memory
