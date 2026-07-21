@@ -19,6 +19,21 @@ const MODEL     = process.env.WIKI_EMBED_MODEL || 'Xenova/bge-small-en-v1.5'
 const POOLING   = process.env.WIKI_EMBED_POOLING || 'cls'
 const QUANTIZED = process.env.WIKI_EMBED_QUANTIZED === '1'
 
+// Prefer wiki-plugin-semindex's shared worker-thread embedder when installed:
+// one model instance per process (shared with bulk indexing), inference off
+// the event loop, and similarity's own heavy deps become optional. The
+// sibling path works for npm installs (wiki/node_modules/*) and dev symlinks
+// (~/Code/wiki-plugins/*) alike; the bare require covers other layouts.
+const semindexLib = (() => {
+  const path = require('node:path')
+  const fs   = require('node:fs')
+  try {
+    const sibling = path.resolve(__dirname, '../../wiki-plugin-semindex/server/embed-lib.js')
+    if (fs.existsSync(sibling)) return require(sibling)
+    return require('wiki-plugin-semindex/server/embed-lib.js')
+  } catch { return null }
+})()
+
 // transformers.js statically imports onnxruntime-node, whose native binary
 // needs glibc. On musl containers (node:alpine — the public farm) that import
 // throws "Error loading shared library ld-linux-x86-64.so.2". Probe the
@@ -47,7 +62,13 @@ const getExtractor = () => {
         console.log('[wiki-plugin-similarity] native onnxruntime unavailable — using WASM backend')
       }
       // Dynamic import: @xenova/transformers is ESM-only; this file must stay CJS.
-      const { pipeline, env } = await import('@xenova/transformers')
+      // Since 0.8.0 the heavy deps are optionalDependencies — absent on slim
+      // installs, where semindex delegation or WIKI_EMBED_URL is the path.
+      const { pipeline, env } = await import('@xenova/transformers').catch(() => {
+        throw new Error('no local embedder: @xenova/transformers is not installed. ' +
+          'Install wiki-plugin-semindex, set WIKI_EMBED_URL, or reinstall ' +
+          'wiki-plugin-similarity with optional dependencies.')
+      })
       if (process.env.WIKI_MODEL_CACHE) env.cacheDir = process.env.WIKI_MODEL_CACHE
       if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1
       return pipeline('feature-extraction', MODEL, { quantized: QUANTIZED })
@@ -59,13 +80,15 @@ const getExtractor = () => {
 
 // Embed one text → plain number[384], unit-normalised.
 const embed = async text => {
+  if (semindexLib) return semindexLib.embed(text)
   const extractor = await getExtractor()
   const out = await extractor(text, { pooling: POOLING, normalize: true })
   return Array.from(out.data)
 }
 
 // Warm the model in the background (call at startup; failures just defer to
-// first request).
-const warm = () => { getExtractor().catch(() => {}) }
+// first request). With semindex delegation, don't warm — its worker spawns on
+// demand and self-terminates when idle; pre-warming would just pin ~0.5GB.
+const warm = () => { if (!semindexLib) getExtractor().catch(() => {}) }
 
-module.exports = { embed, warm }
+module.exports = { embed, warm, viaSemindex: !!semindexLib }

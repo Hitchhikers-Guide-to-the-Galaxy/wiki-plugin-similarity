@@ -501,26 +501,47 @@ const startServer = ({ argv, app }) => {
   })
 
   // ── GET /system/build-index.json?domains=…&force=… ────────────────────────
-  // Heavy embedding is the farm indexer's job — proxy when configured, else
-  // explain where indexing happens.
+  // Resolution order: WIKI_INDEXER_URL proxy (explicit config wins) → local
+  // wiki-plugin-semindex (in-process enqueue, owner/admin only) → 501.
+  const semindex = (() => {
+    try {
+      const sibling = path.resolve(__dirname, '../../wiki-plugin-semindex/server/indexer.js')
+      if (fs.existsSync(sibling)) return require(sibling)
+      return require('wiki-plugin-semindex/server/indexer.js')
+    } catch { return null }
+  })()
+
   app.get('/system/build-index.json', async (req, res) => {
     cors(res)
-    if (!INDEXER_URL) {
-      return res.status(501).json({
-        error: 'no farm indexer configured on this server',
-        hint: 'Indexing runs on the farm indexer (Pi5 on the Hitchhikers farm); ' +
-              'indexes arrive by sync. Set WIKI_INDEXER_URL to enable proxying.',
-      })
+    if (INDEXER_URL) {
+      try {
+        const qs = new URLSearchParams({
+          domains: req.query.domains || '*',
+          force:   req.query.force || '0',
+        })
+        return res.json(await getJson(`${INDEXER_URL}?${qs}`))
+      } catch (e) {
+        return res.status(502).json({ error: `farm indexer unavailable: ${e.message}` })
+      }
     }
-    try {
-      const qs = new URLSearchParams({
-        domains: req.query.domains || '*',
-        force:   req.query.force || '0',
-      })
-      res.json(await getJson(`${INDEXER_URL}?${qs}`))
-    } catch (e) {
-      res.status(502).json({ error: `farm indexer unavailable: ${e.message}` })
+    if (semindex) {
+      const sh = app.securityhandler
+      const ok = (() => {
+        try { return !!sh && (!!sh.isAdmin?.(req) || !!sh.isAuthorized?.(req)) } catch { return false }
+      })()
+      if (!ok) return res.sendStatus(403)
+      if (semindex.MODE !== 'writer') {
+        return res.status(409).json({ error: `semindex mode is '${semindex.MODE}' — not a writer` })
+      }
+      const queued = semindex.enqueueGlobs(req.query.domains || '*', req.query.force === '1')
+      return res.json({ queued, ...semindex.status() })
     }
+    res.status(501).json({
+      error: 'no indexer available on this server',
+      hint: 'Install wiki-plugin-semindex for in-process indexing, or set ' +
+            'WIKI_INDEXER_URL to proxy to a farm indexer; indexes can also ' +
+            'arrive by sync.',
+    })
   })
 
   console.log('[wiki-plugin-similarity] routes registered')
