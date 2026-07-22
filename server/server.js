@@ -11,9 +11,12 @@
 //   GET  /system/semantic-vectors.json[?domain=]
 //     Serves {farm}/{domain}/status/semantic-vectors.json.
 //   GET  /system/embed.json?text=…
-//     384-dim unit vector via the in-process transformers.js embedder
+//     384-dim unit vector via the crash-isolated child-process embedder
 //     (BAAI/bge-small-en-v1.5 — same model the indexes were built with).
 //     Set WIKI_EMBED_URL to proxy to an external embedder instead.
+//   GET  /system/similarity-health.json
+//     Embedder supervisor state (child-process | semindex | url, breaker,
+//     recent crashes) — 200 always; diagnosable from outside.
 //   POST /system/search-report.json  {query, domains, limit, threshold, live}
 //     Ranked, stub-filtered, fork-bundled semantic report (page JSON).
 //   GET  /system/farm-search.json?q=…&pattern=…&limit=…
@@ -216,7 +219,7 @@ const startServer = ({ argv, app }) => {
                        '/system/embed.json', '/system/search-report.json',
                        '/system/farm-search.json', '/system/build-index.json',
                        '/system/galaxy-search.json', '/system/peer-search.json',
-                       '/system/peer-hello.json']) {
+                       '/system/peer-hello.json', '/system/similarity-health.json']) {
     app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
   }
 
@@ -338,8 +341,20 @@ const startServer = ({ argv, app }) => {
       res.json({ vector: await embedText(text) })
     } catch (e) {
       console.error('[wiki-plugin-similarity] embed error:', e.message)
-      res.status(502).json({ error: `embedding unavailable: ${e.message}` })
+      res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 502)
+        .json({ error: `embedding unavailable: ${e.message}` })
     }
+  })
+
+  // ── GET /system/similarity-health.json — embedder supervisor state ────────
+  app.get('/system/similarity-health.json', (req, res) => {
+    cors(res)
+    res.json({
+      plugin: 'wiki-plugin-similarity',
+      version: PLUGIN_VERSION,
+      ...MODEL_META,
+      embedder: EMBED_URL ? { via: 'url', url: EMBED_URL } : embedder.status(),
+    })
   })
 
   // ── POST /system/search-report.json ────────────────────────────────────────
@@ -363,7 +378,8 @@ const startServer = ({ argv, app }) => {
       res.json(page)
     } catch (e) {
       console.error('[wiki-plugin-similarity] search-report error:', e.message)
-      res.status(500).json({ error: `search-report failed: ${e.message}` })
+      res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)
+        .json({ error: `search-report failed: ${e.message}` })
     }
   })
 
@@ -496,7 +512,8 @@ const startServer = ({ argv, app }) => {
         farm: req.hostname, sites: grantedNames.length, count } })
     } catch (e) {
       console.error('[wiki-plugin-similarity] peer-search error:', e.message)
-      res.status(500).json({ error: `peer-search failed: ${e.message}` })
+      res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)
+        .json({ error: `peer-search failed: ${e.message}` })
     }
   })
 
