@@ -43,6 +43,10 @@ const parseDSL = text => {
       if (mode === 'search') mode = 'keyword'
       continue
     }
+    if (isCmd(upper, 'SITES')) {
+      if (mode === 'search') mode = 'sites'
+      continue
+    }
     if (isCmd(upper, 'ROSTER')) {
       const ref = val(line, 'ROSTER')
       if (ref) rosterRefs.push(ref)
@@ -141,6 +145,17 @@ describe('parseDSL — bare commands default sensibly', () => {
     const r = parseDSL('REPORT\ndavid.*')
     assert.equal(r.mode, 'report')
     assert.deepEqual(r.specs, ['david.*'])
+  })
+  it('bare SITES triggers sites mode', () => assert.equal(parseDSL('SITES').mode, 'sites'))
+  it('SITES keeps domain specs for server', () => {
+    const r = parseDSL('SITES\n*.garden')
+    assert.equal(r.mode, 'sites')
+    assert.deepEqual(r.specs, ['*.garden'])
+  })
+  it('domain starting with sites is not treated as command', () => {
+    const r = parseDSL('sites.example.com')
+    assert.deepEqual(r.specs, ['sites.example.com'])
+    assert.equal(r.mode, 'search')
   })
   it('AUTHOR with domain spec stays search mode', () => {
     const r = parseDSL('david.*\nAUTHOR')

@@ -21,6 +21,8 @@
 //   SIMILAR: → ambient mode — automatically find pages similar to this page
 //   REPORT   → server-side ranked/bundled semantic report (ghost page)
 //   KEYWORD  → galactic MiniSearch over live site-index.json files (ghost page)
+//   SITES    → which site should this page go on? — per-domain aggregation of
+//              the page-vector scan (ghost page)
 //   (other)  → search form mode — user types a query, results appear
 //
 // Server endpoints required (all same-origin, served by this plugin's server
@@ -29,6 +31,7 @@
 //   GET  /system/semantic-vectors.json?domain=
 //   GET  /system/embed.json?text=query
 //   POST /system/search-report.json
+//   POST /system/site-report.json
 //   GET  /system/farm-search.json?q=&pattern=&limit=
 //   GET  /system/build-index.json?domains=&force=
 
@@ -83,6 +86,10 @@ const parseDSL = text => {
     }
     if (isCmd(upper, 'KEYWORD')) {
       if (mode === 'search') mode = 'keyword'
+      continue
+    }
+    if (isCmd(upper, 'SITES')) {
+      if (mode === 'search') mode = 'sites'
       continue
     }
     if (isCmd(upper, 'BUILD')) {
@@ -408,14 +415,17 @@ export const emit = (div, item) => {
         <div class="sim-status">Finding similar pages across ${label}…</div>
         <div class="sim-results"></div>
       </div>`)
-  } else if (mode === 'author' || mode === 'report' || mode === 'keyword') {
+  } else if (mode === 'author' || mode === 'report' || mode === 'keyword' || mode === 'sites') {
     const label = specs.length ? specs.join(', ') : '(current domain)'
-    const btnLabel = mode === 'report' ? 'Report' : mode === 'keyword' ? 'Keyword' : 'Author'
+    const btnLabel = mode === 'report' ? 'Report' : mode === 'keyword' ? 'Keyword'
+      : mode === 'sites' ? 'Sites' : 'Author'
+    const hint = mode === 'sites' ? 'Where should this page go? Title + first paragraph…'
+      : 'Search wiki pages…'
     div.html(`
       <style>${STYLES}</style>
       <div class="similarity" data-id="${item.id}">
         <div class="sim-form">
-          <input class="sim-input" type="text" placeholder="Search wiki pages…" />
+          <input class="sim-input" type="text" placeholder="${hint}" />
           <button class="sim-btn">${btnLabel}</button>
         </div>
         <div class="sim-status">Domains: ${label}</div>
@@ -660,6 +670,51 @@ export const bind = (div, item) => {
 
     btn.addEventListener('click', doReport)
     input.addEventListener('keydown', e => { if (e.key === 'Enter') doReport() })
+
+  } else if (mode === 'sites') {
+    // Sites mode — which site should this page go on? Server aggregates the
+    // page-vector scan per domain; result opens as a ghost page.
+    const input = div.find('.sim-input')[0]
+    const btn   = div.find('.sim-btn')[0]
+    let readyLine = `Domains: ${specs.length ? specs.join(', ') : '*'}`
+
+    ;(async () => {
+      try {
+        const eff = await specsP
+        const domains = await resolveDomains(eff.length ? eff : ['*'], origin)
+        const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
+        readyLine = configSummary('Site report ready', pages, domains.length)
+        status.textContent = readyLine
+      } catch (e) {
+        status.textContent = `Domain listing unavailable: ${e.message}`
+      }
+    })()
+
+    const doSites = async () => {
+      const query = input.value.trim()
+      if (!query) return
+      btn.disabled = true
+      status.textContent = 'Ranking sites…'
+      try {
+        const eff = await specsP
+        const res = await fetch(`${origin}/system/site-report.json`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, domains: eff.length ? eff : ['*'], limit }),
+        })
+        if (!res.ok) throw new Error(`site-report failed: ${res.status}`)
+        const page = await res.json()
+        window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
+        status.textContent = readyLine
+      } catch (e) {
+        status.textContent = `Error: ${e.message}`
+      } finally {
+        btn.disabled = false
+      }
+    }
+
+    btn.addEventListener('click', doSites)
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doSites() })
 
   } else if (mode === 'keyword') {
     // Keyword mode — galactic MiniSearch: the server reads each site's own

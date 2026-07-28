@@ -1,0 +1,646 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Similarity",
+  "version": "0.10.0",
+  "description": "Semantic and federated search across a wiki farm — the READER half of the pair, with wiki-plugin-semindex as the writer. These routes are served by this plugin’s own server and described here rather than mounted by the farm. Most of them could not be mounted: they gate on the caller, count requests per address, pass bytes through from disk, or answer with status codes that carry meaning — and a farm handler is a plain function that never sees the request."
+ },
+ "paths": {
+  "/system/indexed-domains.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "indexedDomains",
+    "summary": "Which sites have vectors",
+    "description": "Every site on this farm carrying a semantic index, with how many pages are in it. Reads the index files off disk; no embedding, so it is cheap.",
+    "parameters": [
+     {
+      "name": "pattern",
+      "in": "query",
+      "required": false,
+      "description": "Comma-separated globs, or the words PUBLIC, LOCAL and PRIVATE.",
+      "schema": {
+       "type": "string",
+       "default": "*"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Stop after this many.",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Indexed sites, largest index first.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/IndexedDomain"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/system/semantic-vectors.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "semanticVectors",
+    "summary": "One site's page vectors",
+    "description": "The whole vector file for a site, passed through from disk rather than re-serialised — which is why the farm could not mount this even if it wanted to: a handler returns a value, not bytes.",
+    "parameters": [
+     {
+      "name": "domain",
+      "in": "query",
+      "required": false,
+      "description": "Which site. Defaults to the one you asked.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The vector file, verbatim."
+     },
+     "404": {
+      "description": "That site has no index."
+     },
+     "500": {
+      "description": "The index file could not be read."
+     }
+    }
+   }
+  },
+  "/system/embed.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "embed",
+    "summary": "Turn one text into a vector",
+    "description": "Embeds a string with this farm's model. Distinct from semindex's embed route, which is the writer's and is rate-limited; this one is the reader's.",
+    "parameters": [
+     {
+      "name": "text",
+      "in": "query",
+      "required": true,
+      "description": "The text to embed.",
+      "schema": {
+       "type": "string"
+      },
+      "x-fedwiki-example": "federated wiki"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The vector.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Vector"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "No text was given."
+     },
+     "502": {
+      "description": "The embedder failed."
+     },
+     "503": {
+      "description": "The embedder is down — a distinct code, because it means try later rather than try differently."
+     }
+    }
+   }
+  },
+  "/system/similarity-health.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "health",
+    "summary": "Which model, and is it up",
+    "description": "The model, its dimensions, and the state of the embedder supervisor — or, where the farm delegates embedding elsewhere, the address it delegates to.",
+    "responses": {
+     "200": {
+      "description": "Model and embedder state.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Health"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/system/search-report.json": {
+   "post": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "searchReport",
+    "summary": "Semantic search, as a page",
+    "description": "Searches the farm semantically and answers with a wiki page rather than a result list. Optionally continues into peer farms. Takes a JSON body, which the farm cannot express as a mounted operation today — it reads query parameters only.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "A wiki page of results."
+     },
+     "400": {
+      "description": "No query was given."
+     },
+     "500": {
+      "description": "The search failed."
+     },
+     "503": {
+      "description": "The embedder is down."
+     }
+    }
+   }
+  },
+  "/system/site-report.json": {
+   "post": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "siteReport",
+    "summary": "Which site should this page go on?",
+    "description": "Aggregates the semantic page scan per domain and ranks the farm's sites for a topic: 0.7 × mean of the top 5 page similarities + 0.3 × site-centroid similarity. Forked pages count for every site that carries them. Send a title plus first paragraphs — the embedder truncates around 512 tokens. Takes a JSON body.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SiteReportRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "A wiki page of ranked sites, or flat JSON when format is 'flat'."
+     },
+     "400": {
+      "description": "No query was given."
+     },
+     "500": {
+      "description": "The search failed."
+     },
+     "503": {
+      "description": "The embedder is down."
+     }
+    }
+   }
+  },
+  "/system/farm-search.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "farmSearch",
+    "summary": "Search this farm",
+    "description": "Semantic search across the sites of this farm, answered as a page. Explicit hostnames that are not on disk are searched over HTTP through the galaxy cache instead.",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "description": "What to search for.",
+      "schema": {
+       "type": "string"
+      },
+      "x-fedwiki-example": "ghost pages"
+     },
+     {
+      "name": "pattern",
+      "in": "query",
+      "required": false,
+      "description": "Which sites — globs, or PUBLIC, LOCAL, PRIVATE.",
+      "schema": {
+       "type": "string",
+       "default": "*"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "How many results.",
+      "schema": {
+       "type": "integer",
+       "default": 10
+      }
+     },
+     {
+      "name": "farms",
+      "in": "query",
+      "required": false,
+      "description": "Comma-separated peer farms to continue the search into.",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A wiki page of results."
+     },
+     "400": {
+      "description": "No q was given."
+     },
+     "500": {
+      "description": "The search failed."
+     }
+    }
+   }
+  },
+  "/system/galaxy-search.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "galaxySearch",
+    "summary": "Search named sites elsewhere",
+    "description": "Searches sites this farm does not hold, over HTTP, through the galaxy cache. Unlike farm-search the sites must be named — there is no glob over somebody else’s farm.",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "description": "What to search for.",
+      "schema": {
+       "type": "string"
+      },
+      "x-fedwiki-example": "ghost pages"
+     },
+     {
+      "name": "sites",
+      "in": "query",
+      "required": true,
+      "description": "Comma-separated hostnames to search.",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "How many results.",
+      "schema": {
+       "type": "integer",
+       "default": 10
+      }
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "description": "Ask for the raw outcome instead of a page.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "flat"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "A wiki page of results, or the flat outcome."
+     },
+     "400": {
+      "description": "q or sites was missing."
+     },
+     "500": {
+      "description": "The search failed."
+     }
+    }
+   }
+  },
+  "/system/peer-hello.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "peerHello",
+    "summary": "Does this farm federate",
+    "description": "A capability probe another farm reads before asking anything of this one. Static, cached for an hour, and costs no embedding. A 404 or HTML here means the plugin is absent — which is the answer it is really there to give. It advertises no grants: what this farm will actually answer is decided per site, and only when asked.",
+    "responses": {
+     "200": {
+      "description": "What this farm is and whether it federates.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PeerHello"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/system/peer-search.json": {
+   "post": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-read-only": true,
+    "operationId": "peerSearch",
+    "summary": "Search on behalf of another farm",
+    "description": "Federated search from a peer. Two keys must turn: the farm admin’s ceiling, and each site’s own grants page. The scope for a caller is exactly the union of sites that granted it — one site’s grant never opens the farm. Login-to-view sites are excluded unconditionally. Guarded by hop limit, request-id dedup, and rate limits keyed on the caller’s address, none of which a farm-mounted handler could apply, because it never sees the request.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PeerEnvelope"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Results from the sites that granted this caller."
+     },
+     "400": {
+      "description": "No query was given."
+     },
+     "403": {
+      "description": "No site on this farm grants federated search to that origin."
+     },
+     "429": {
+      "description": "Too many requests from this caller, or from everyone at once."
+     }
+    }
+   }
+  },
+  "/system/build-index.json": {
+   "get": {
+    "x-fedwiki-served-by": "plugin",
+    "x-fedwiki-writes": true,
+    "operationId": "buildIndex",
+    "summary": "Ask for an index build",
+    "description": "Delegates: to a remote indexer if one is configured, otherwise to semindex in this process, otherwise it says plainly that there is none. Owner or admin only in the local case.",
+    "parameters": [
+     {
+      "name": "domains",
+      "in": "query",
+      "required": false,
+      "description": "Comma-separated globs naming which sites to index.",
+      "schema": {
+       "type": "string",
+       "default": "*"
+      }
+     },
+     {
+      "name": "force",
+      "in": "query",
+      "required": false,
+      "description": "Rebuild even where the index looks current.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "default": "0"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "What was queued."
+     },
+     "403": {
+      "description": "Not the owner or an admin."
+     },
+     "409": {
+      "description": "The local indexer is not running as a writer."
+     },
+     "501": {
+      "description": "No indexer at all — install semindex, point at a remote one, or let indexes arrive by sync."
+     },
+     "502": {
+      "description": "The remote indexer could not be reached."
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "IndexedDomain": {
+    "type": "object",
+    "properties": {
+     "domain": {
+      "type": "string"
+     },
+     "page_count": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Null when the index exists but could not be counted."
+     }
+    }
+   },
+   "Vector": {
+    "type": "object",
+    "properties": {
+     "vector": {
+      "type": "array",
+      "items": {
+       "type": "number"
+      }
+     }
+    }
+   },
+   "Health": {
+    "type": "object",
+    "properties": {
+     "plugin": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     },
+     "model": {
+      "type": "string"
+     },
+     "dim": {
+      "type": "integer"
+     },
+     "quantized": {
+      "type": "boolean"
+     },
+     "embedder": {
+      "type": "object",
+      "description": "The supervisor’s state, or {via, url} where embedding is delegated elsewhere."
+     }
+    }
+   },
+   "PeerHello": {
+    "type": "object",
+    "properties": {
+     "plugin": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     },
+     "model": {
+      "type": "string"
+     },
+     "dim": {
+      "type": "integer"
+     },
+     "site": {
+      "type": "string"
+     },
+     "federation": {
+      "type": "object",
+      "properties": {
+       "enabled": {
+        "type": "boolean"
+       },
+       "kinds": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "hopsAccepted": {
+        "type": "integer"
+       }
+      }
+     }
+    }
+   },
+   "ReportRequest": {
+    "type": "object",
+    "required": [
+     "query"
+    ],
+    "properties": {
+     "query": {
+      "type": "string"
+     },
+     "domains": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "default": [
+       "*"
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "default": 10
+     },
+     "threshold": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Minimum similarity to keep."
+     },
+     "live": {
+      "type": "boolean",
+      "description": "Embed the query now rather than reusing a cached vector."
+     },
+     "farms": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Peer farms to continue into. At most eight are asked."
+     }
+    }
+   },
+   "PeerEnvelope": {
+    "type": "object",
+    "required": [
+     "query",
+     "origin"
+    ],
+    "properties": {
+     "query": {
+      "type": "string"
+     },
+     "origin": {
+      "type": "string",
+      "description": "The farm asking. Grants are keyed on this."
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "report",
+       "keyword"
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "default": 10
+     },
+     "hops": {
+      "type": "integer",
+      "description": "How far this request has already travelled. This farm accepts zero."
+     },
+     "requestId": {
+      "type": "string",
+      "description": "Used to drop a request that arrives twice."
+     }
+    }
+   },
+   "SiteReportRequest": {
+    "type": "object",
+    "required": [
+     "query"
+    ],
+    "properties": {
+     "query": {
+      "type": "string"
+     },
+     "domains": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "default": [
+       "*"
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "default": 10,
+      "description": "Sites returned."
+     },
+     "format": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "flat",
+       null
+      ],
+      "description": "'flat' answers plain JSON with per-site scores and evidence; default answers a wiki page."
+     }
+    }
+   }
+  }
+ }
+}

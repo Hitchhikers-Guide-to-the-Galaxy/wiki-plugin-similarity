@@ -19,6 +19,9 @@
 //     recent crashes) — 200 always; diagnosable from outside.
 //   POST /system/search-report.json  {query, domains, limit, threshold, live}
 //     Ranked, stub-filtered, fork-bundled semantic report (page JSON).
+//   POST /system/site-report.json  {query, domains, limit, format}
+//     Which site should this page go on? Per-domain aggregation of the
+//     page-vector scan (page JSON, or flat JSON with format: 'flat').
 //   GET  /system/farm-search.json?q=…&pattern=…&limit=…
 //     Galactic keyword search — reads each site's own per-edit MiniSearch
 //     index (status/site-index.json). No index building.
@@ -52,6 +55,7 @@ const https  = require('node:https')
 const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm-lib')
 const embedder     = require('./embedder')
 const { buildReport } = require('./search-report')
+const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
 const { ceiling, grantingDomains, makeDedup, makeBucket, guardEnvelope } = require('./peer-guard')
@@ -217,6 +221,7 @@ const startServer = ({ argv, app }) => {
 
   for (const route of ['/system/indexed-domains.json', '/system/semantic-vectors.json',
                        '/system/embed.json', '/system/search-report.json',
+                       '/system/site-report.json',
                        '/system/farm-search.json', '/system/build-index.json',
                        '/system/galaxy-search.json', '/system/peer-search.json',
                        '/system/peer-hello.json', '/system/similarity-health.json']) {
@@ -380,6 +385,25 @@ const startServer = ({ argv, app }) => {
       console.error('[wiki-plugin-similarity] search-report error:', e.message)
       res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)
         .json({ error: `search-report failed: ${e.message}` })
+    }
+  })
+
+  // ── POST /system/site-report.json ──────────────────────────────────────────
+  // {query, domains, limit, format} → which SITE should this page go on?
+  // Per-domain aggregation of the page-vector scan (site-report.js). Farm-local
+  // by design — no peer federation; placement is a question about our own farm.
+  app.post('/system/site-report.json', async (req, res) => {
+    cors(res)
+    try {
+      const body = await readBody(req)
+      if (!body.query) return res.status(400).json({ error: 'query required' })
+      res.json(await buildSiteReport(
+        body.query, body.domains || ['*'], body.limit || 10, ctx,
+        body.format || null))
+    } catch (e) {
+      console.error('[wiki-plugin-similarity] site-report error:', e.message)
+      res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)
+        .json({ error: `site-report failed: ${e.message}` })
     }
   })
 
