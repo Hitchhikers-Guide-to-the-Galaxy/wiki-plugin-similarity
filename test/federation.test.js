@@ -199,3 +199,25 @@ describe('makeBucket bounds', () => {
     assert.equal(take('steady'), false) // drained, still tracked
   })
 })
+
+describe('findTwins', () => {
+  it('finds same-slug pages via sitemap or semantic-meta, capped by limit', async () => {
+    const { default: farmSearch } = await import('../server/farm-search.js')
+    const fs = await import('node:fs')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const farm = fs.mkdtempSync(path.join(os.tmpdir(), 'twins-'))
+    const mk = (domain, files) => {
+      fs.mkdirSync(path.join(farm, domain, 'status'), { recursive: true })
+      for (const [name, data] of Object.entries(files))
+        fs.writeFileSync(path.join(farm, domain, 'status', name), JSON.stringify(data))
+    }
+    // meta-only site (synced mirror shape) carries the slug
+    mk('meta.example', { 'semantic-meta.json': [{ slug: 'the-page', title: 'The Page', mtime: 1 }] })
+    // meta-only site without the slug
+    mk('other.example', { 'semantic-meta.json': [{ slug: 'unrelated', title: 'Unrelated', mtime: 1 }] })
+    const twins = farmSearch.findTwins([[farm, 'local']], ['*'], new Set(), 'the-page')
+    fs.rmSync(farm, { recursive: true, force: true })
+    assert.deepEqual(twins, [{ domain: 'meta.example', slug: 'the-page', title: 'The Page' }])
+  })
+})

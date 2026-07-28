@@ -30,10 +30,12 @@ const globMatch = (pattern, str) => {
 }
 
 // ── Scope keywords (exact uppercase, per DSL convention) ──────────────────────
-//   *        all farms
+//   *        all farms — EXCEPT galaxy: off-farm sites join a search only by
+//            explicit opt-in (GALAXY, an explicit domain, or a roster)
 //   PUBLIC   domains in 'public' farms (Nextcloud mirror)
 //   LOCAL    domains in the primary ('local') farm
 //   PRIVATE  public domains marked "restricted": true in a farm config
+//   GALAXY   off-farm federation sites in the 'galaxy' tree (see galaxy-vectors.js)
 
 const loadRestricted = publicFarms => {
   const restricted = new Set()
@@ -55,10 +57,11 @@ const loadRestricted = publicFarms => {
 
 const matchesAny = (domain, kind, patterns, restricted) =>
   patterns.some(p => {
-    if (p === '*') return true
+    if (p === '*') return kind !== 'galaxy'
     if (p === 'PUBLIC') return kind === 'public'
     if (p === 'LOCAL') return kind === 'local'
     if (p === 'PRIVATE') return kind === 'public' && restricted.has(domain)
+    if (p === 'GALAXY') return kind === 'galaxy'
     return globMatch(p, domain)
   })
 

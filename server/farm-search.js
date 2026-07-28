@@ -85,6 +85,46 @@ const searchFarm = (farms, patterns, restricted, query, limit, exclude = null) =
   return { results: results.slice(0, limit), searched, matched: results.length }
 }
 
+// ── Same-title scan ───────────────────────────────────────────────────────────
+// A fork carries the slug, so slug presence in a site's page list IS "this
+// page lives there". An existence question, not a search — keyword scoring is
+// the wrong tool here: a twin's score can rank below fifty noisy word-matches
+// on a large farm. Two sources per domain, freshest first: the per-edit
+// sitemap (via the site-index cache above), else semantic-meta.json — the
+// tiny slug+title list the indexer writes beside the vectors, which synced
+// mirror sites carry even when their sitemap is not synced.
+
+const metaCache = new Map() // domain → {mtime, titles}
+
+const loadMetaTitles = (farm, domain) => {
+  const p = path.join(farm, domain, 'status', 'semantic-meta.json')
+  let mtime
+  try { mtime = fs.statSync(p).mtimeMs } catch { return null }
+  const hit = metaCache.get(domain)
+  if (hit && hit.mtime === mtime) return hit.titles
+  try {
+    const titles = new Map(
+      JSON.parse(fs.readFileSync(p, 'utf8')).map(e => [e.slug, e.title]))
+    metaCache.set(domain, { mtime, titles })
+    return titles
+  } catch { return null }
+}
+
+const findTwins = (farms, patterns, restricted, slug, limit = 25) => {
+  const domains = listDomains(farms, patterns, restricted)
+  const twins = []
+  for (const { farm, domain } of domains) {
+    const entry = loadDomainIndex(farm, domain)
+    const titles = entry ? entry.titles : loadMetaTitles(farm, domain)
+    if (!titles) continue
+    const title = titles.get(slug)
+    if (title === undefined) continue
+    twins.push({ domain, slug, title: title || slug })
+    if (twins.length >= limit) break
+  }
+  return twins
+}
+
 // ── Report page JSON (ghost-page ready, mirrors search-report style) ──────────
 
 const keywordReportPage = (query, { results, searched, matched }, limit, specs) => {
@@ -121,4 +161,4 @@ const keywordReportPage = (query, { results, searched, matched }, limit, specs) 
   return { title: `${query} Keyword Search`, story }
 }
 
-module.exports = { searchFarm, keywordReportPage }
+module.exports = { searchFarm, keywordReportPage, findTwins }

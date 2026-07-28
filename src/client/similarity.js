@@ -10,6 +10,9 @@
 //   # comment                 ignored
 //   LIST                      list indexed domains (mode directive)
 //   SIMILAR: high             threshold preset AND ambient mode trigger
+//   SUBJECT                   modifier: act on the PREVIOUS page in the lineup
+//                             (the host a tool page was opened beside; falls
+//                             back to the containing page when none)
 //   THRESHOLD: 0.72           exact cosine threshold (overrides SIMILAR:)
 //   LIMIT: 8                  max results shown (default 10)
 //   ROSTER site/slug          add the sites of a roster page to the scope
@@ -29,7 +32,7 @@
 // component — works on any host, including the public farm):
 //   GET  /system/indexed-domains.json?pattern=glob1,glob2
 //   GET  /system/semantic-vectors.json?domain=
-//   GET  /system/embed.json?text=query
+//   POST /system/embed.json  {text}
 //   POST /system/search-report.json
 //   POST /system/site-report.json
 //   GET  /system/farm-search.json?q=&pattern=&limit=
@@ -58,6 +61,7 @@ const parseDSL = text => {
   let limit     = null
   let mode      = 'search'  // default: interactive search form
   let live      = false     // default: cache results in localStorage
+  let subject   = false     // SUBJECT modifier: act on the previous lineup page
   let force     = false     // BUILD mode: re-embed even when index is fresh
   let ghostUrl  = null      // GHOST mode: page-json URL to open as a ghost page
   let label     = null      // BUTTON: custom button caption (GHOST / BUILD modes)
@@ -76,6 +80,7 @@ const parseDSL = text => {
 
     const upper = line.toUpperCase()
     if (isCmd(upper, 'LIVE'))  { live = true; continue }
+    if (isCmd(upper, 'SUBJECT')) { subject = true; continue }
     if (isCmd(upper, 'AUTHOR')) {
       if (!specs.length && mode === 'search') mode = 'author'
       continue
@@ -133,7 +138,7 @@ const parseDSL = text => {
       continue
     }
     // Anything else is a domain spec (glob, explicit domain, or scope keyword)
-    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
+    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(upper) ? upper : line)
   }
 
   return {
@@ -144,6 +149,7 @@ const parseDSL = text => {
     threshold: threshold ?? DEFAULT_THRESHOLD,
     limit:     limit     ?? DEFAULT_LIMIT,
     live,
+    subject,
     force,
     ghostUrl,
     label,
@@ -154,8 +160,10 @@ const parseDSL = text => {
 const isGlob = spec => spec.includes('*') || spec.includes('?')
 
 // Scope keywords expand server-side: PUBLIC (Nextcloud mirror farms),
-// LOCAL (primary farm), PRIVATE (public domains with restricted: true)
-const isScope = spec => spec === 'PUBLIC' || spec === 'LOCAL' || spec === 'PRIVATE'
+// LOCAL (primary farm), PRIVATE (public domains with restricted: true),
+// GALAXY (off-farm federation sites indexed into the galaxy tree)
+const isScope = spec => spec === 'PUBLIC' || spec === 'LOCAL' || spec === 'PRIVATE' ||
+  spec === 'GALAXY'
 
 // ── Slug ──────────────────────────────────────────────────────────────────────
 
@@ -269,8 +277,14 @@ const loadVectors = async domain => {
 
 // ── Embedding ─────────────────────────────────────────────────────────────────
 
+// POST, never GET: page-length text in a query string overflows Node's header
+// limit and dies with 431 before any handler runs (server ≥ 0.11.0).
 const getEmbedding = async (text, origin) => {
-  const res = await fetch(`${origin}/system/embed.json?text=${encodeURIComponent(text)}`)
+  const res = await fetch(`${origin}/system/embed.json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
   if (!res.ok) throw new Error(`embed failed: ${res.status}`)
   return (await res.json()).vector
 }
@@ -282,6 +296,32 @@ const lookupPageVector = async (slug, domain) => {
   const entry = pages.find(p => p.slug === slug)
   return entry ? entry.vector : null
 }
+
+// ── Subject resolution ────────────────────────────────────────────────────────
+// SUBJECT makes an item act on the page BEFORE its own in the lineup — the
+// host a tool page was opened beside — falling back to the containing page so
+// a tool page opened alone still works (and announces the fallback).
+// The page div's id IS the slug (possibly _rev-suffixed on a historical view);
+// data('data') carries the full raw page JSON; data('site') is set only on
+// remote pages. `text` is title + opening prose, capped: the BGE-small
+// embedder truncates around 512 tokens, so more would be discarded anyway.
+
+const resolveSubject = div => {
+  const $self = div.parents('.page:first')
+  const $host = $self.prev('.page')
+  const $page = $host.length ? $host : $self
+  const slug  = ($page.attr('id') || '').split('_rev')[0]
+  const site  = $page.data('site') || window.location.hostname
+  const data  = $page.data('data') || {}
+  const title = data.title || $page.find('.title').text().trim() || slug
+  const text  = [title, ...(data.story || [])
+    .filter(i => i.type === 'markdown' || i.type === 'paragraph')
+    .map(i => (i.text || '').trim()).filter(Boolean)].join('\n').slice(0, 2000)
+  return { slug, site, title, text, isSelf: !$host.length }
+}
+
+const subjectNote = s =>
+  `Subject: ${s.title}${s.isSelf ? ' (this page)' : ` @ ${s.site}`}`
 
 // ── Cosine search ─────────────────────────────────────────────────────────────
 
@@ -447,13 +487,23 @@ export const emit = (div, item) => {
 }
 
 export const bind = (div, item) => {
-  const { mode, specs, rosterRefs, farms, threshold, limit, live, force, ghostUrl, thresholdSet } =
-    parseDSL(item?.text || '')
+  const { mode, specs, rosterRefs, farms, threshold, limit, live, subject: subjectFlag,
+    force, ghostUrl, thresholdSet } = parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
-  const cache   = live ? null : readCache(item)
+  // The subject depends on where in the lineup this page was opened, so
+  // cached results from one host must never replay beside another.
+  const subject = subjectFlag ? resolveSubject(div) : null
+  const cache   = (live || subject) ? null : readCache(item)
   // Scope = DSL specs plus roster-page domains (resolved once, shared by modes)
   const specsP  = effectiveSpecs(specs, rosterRefs)
+  // Seed params for the server report routes — the stored page vector wins
+  // server-side; text is the fallback for remote or unindexed subjects.
+  const seedParams = () => subject ? {
+    seed: { site: subject.site, slug: subject.slug },
+    text: subject.text,
+    excludePage: { site: subject.site, slug: subject.slug },
+  } : {}
 
   // Standardised pre-search status: what will run, over how much, with what config.
   // e.g. "Report ready — 18,583 pages across 267 domains · threshold 0.68 · limit 20 · LIVE"
@@ -542,27 +592,36 @@ export const bind = (div, item) => {
     } else {
       ;(async () => {
         try {
-          const $page         = div.parents('.page')
-          const pageTitle     = $page.find('.title').text().trim() || document.title
-          const currentSlug   = slugify(pageTitle)
-          const currentDomain = window.location.hostname
+          // SUBJECT: act on the previous lineup page; otherwise this page.
+          const $page = div.parents('.page')
+          const s = subject || (() => {
+            const pageTitle = $page.find('.title').text().trim() || document.title
+            return { slug: slugify(pageTitle), site: window.location.hostname,
+              title: pageTitle, text: null, isSelf: true }
+          })()
 
           const domainEntries = await loadDomainEntries(await specsP, origin)
           const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-          status.textContent = `Searching ${total.toLocaleString()} pages…`
+          status.textContent = (subject ? `${subjectNote(s)} · ` : '') +
+            `Searching ${total.toLocaleString()} pages…`
 
-          let qVec = await lookupPageVector(currentSlug, currentDomain)
+          let qVec = await lookupPageVector(s.slug, s.site)
           if (!qVec) {
             status.textContent = 'Embedding page (not yet indexed)…'
-            const pageText = $page.find('.item').map((_, el) => $(el).text().trim()).get().filter(Boolean).join('\n')
-            qVec = await getEmbedding(pageText || pageTitle, origin)
+            const pageText = s.text || $page.find('.item')
+              .map((_, el) => $(el).text().trim()).get().filter(Boolean).join('\n')
+            qVec = await getEmbedding(pageText || s.title, origin)
           }
 
           const scored = cosineScan(qVec, domainEntries, {
-            threshold, limit, excludeSlug: currentSlug, excludeDomain: currentDomain,
+            threshold, limit, excludeSlug: s.slug, excludeDomain: s.site,
           })
           renderScored(scored, null)
-          if (scored.length) writeCache(item, { scored })
+          if (subject) {  // keep the subject visible above the results
+            status.textContent = subjectNote(s)
+            status.style.display = ''
+          }
+          if (scored.length && !subject) writeCache(item, { scored })
         } catch (e) {
           status.textContent = `Error: ${e.message}`
         }
@@ -626,6 +685,10 @@ export const bind = (div, item) => {
     const btn   = div.find('.sim-btn')[0]
     let readyLine = `Domains: ${specs.length ? specs.join(', ') : '*'}`
 
+    // SUBJECT: the host page IS the query — prefill its title (editable) and
+    // seed the server search with its stored vector.
+    if (subject && !input.value) input.value = subject.title
+
     // Preload the lightweight domain listing (counts only, no vectors) so the
     // status line shows scope and config before any search is issued.
     ;(async () => {
@@ -635,6 +698,7 @@ export const bind = (div, item) => {
         const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
         readyLine = configSummary('Report ready', pages, domains.length)
         if (farms.length) readyLine += ` · +${farms.length} peer farm${farms.length > 1 ? 's' : ''}`
+        if (subject) readyLine = `${subjectNote(subject)} · ${readyLine}`
         status.textContent = readyLine
       } catch (e) {
         status.textContent = `Domain listing unavailable: ${e.message}`
@@ -648,7 +712,9 @@ export const bind = (div, item) => {
       status.textContent = farms.length ? 'Generating report (asking peer farms)…' : 'Generating report…'
       try {
         const eff = await specsP
-        const body = { query, domains: eff.length ? eff : ['*'], limit, live }
+        // A hand-edited query is a new question — drop the page seed then.
+        const seeded = subject && query === subject.title ? seedParams() : {}
+        const body = { query, domains: eff.length ? eff : ['*'], limit, live, ...seeded }
         if (farms.length) body.farms = farms
         if (thresholdSet) body.threshold = threshold
         const res = await fetch(`${origin}/system/search-report.json`, {
@@ -678,12 +744,15 @@ export const bind = (div, item) => {
     const btn   = div.find('.sim-btn')[0]
     let readyLine = `Domains: ${specs.length ? specs.join(', ') : '*'}`
 
+    if (subject && !input.value) input.value = subject.title
+
     ;(async () => {
       try {
         const eff = await specsP
         const domains = await resolveDomains(eff.length ? eff : ['*'], origin)
         const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
         readyLine = configSummary('Site report ready', pages, domains.length)
+        if (subject) readyLine = `${subjectNote(subject)} · ${readyLine}`
         status.textContent = readyLine
       } catch (e) {
         status.textContent = `Domain listing unavailable: ${e.message}`
@@ -697,10 +766,11 @@ export const bind = (div, item) => {
       status.textContent = 'Ranking sites…'
       try {
         const eff = await specsP
+        const seeded = subject && query === subject.title ? seedParams() : {}
         const res = await fetch(`${origin}/system/site-report.json`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, domains: eff.length ? eff : ['*'], limit }),
+          body: JSON.stringify({ query, domains: eff.length ? eff : ['*'], limit, ...seeded }),
         })
         if (!res.ok) throw new Error(`site-report failed: ${res.status}`)
         const page = await res.json()
@@ -722,7 +792,12 @@ export const bind = (div, item) => {
     const input = div.find('.sim-input')[0]
     const btn   = div.find('.sim-btn')[0]
 
-    status.textContent = `Keyword search ready — domains: ${specs.length ? specs.join(', ') : '*'} · limit ${limit}`
+    // SUBJECT: keyword search wants words, not vectors — the host title is
+    // the prewired query (editable), finding forks and namesakes alike.
+    if (subject && !input.value) input.value = subject.title
+
+    status.textContent = (subject ? `${subjectNote(subject)} · ` : '') +
+      `Keyword search ready — domains: ${specs.length ? specs.join(', ') : '*'} · limit ${limit}`
 
     const doKeyword = async () => {
       const query = input.value.trim()
@@ -756,12 +831,15 @@ export const bind = (div, item) => {
     const results = div.find('.sim-results')[0]
     let domainEntries = null
 
+    if (subject && !input.value) input.value = subject.title
+
     ;(async () => {
       try {
         if (!cache) status.textContent = 'Resolving domains…'
         domainEntries = await loadDomainEntries(await specsP, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-        status.textContent = configSummary('Author ready', total, domainEntries.length)
+        status.textContent = (subject ? `${subjectNote(subject)} · ` : '') +
+          configSummary('Author ready', total, domainEntries.length)
       } catch (e) {
         status.textContent = `Load error: ${e.message}`
       }
@@ -828,12 +906,15 @@ export const bind = (div, item) => {
       status.textContent = ''
     }
 
+    if (subject && !input.value) input.value = subject.title
+
     ;(async () => {
       try {
         if (!cache) status.textContent = 'Resolving domains…'
         domainEntries = await loadDomainEntries(await specsP, origin)
         const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-        status.textContent = configSummary('Search ready', total, domainEntries.length)
+        status.textContent = (subject ? `${subjectNote(subject)} · ` : '') +
+          configSummary('Search ready', total, domainEntries.length)
       } catch (e) {
         status.textContent = `Load error: ${e.message}`
       }

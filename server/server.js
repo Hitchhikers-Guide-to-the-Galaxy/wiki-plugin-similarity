@@ -10,21 +10,33 @@
 //     [{domain, page_count}] for domains with a semantic-vectors.json.
 //   GET  /system/semantic-vectors.json[?domain=]
 //     Serves {farm}/{domain}/status/semantic-vectors.json.
-//   GET  /system/embed.json?text=…
+//   GET|POST /system/embed.json  ?text=… | {text}
 //     384-dim unit vector via the crash-isolated child-process embedder
 //     (BAAI/bge-small-en-v1.5 — same model the indexes were built with).
+//     POST for whole-page prose (long GET query strings die with 431).
 //     Set WIKI_EMBED_URL to proxy to an external embedder instead.
 //   GET  /system/similarity-health.json
 //     Embedder supervisor state (child-process | semindex | url, breaker,
 //     recent crashes) — 200 always; diagnosable from outside.
-//   POST /system/search-report.json  {query, domains, limit, threshold, live}
+//   POST /system/search-report.json  {query, domains, limit, threshold, live,
+//                                     vector?, seed?, text?, excludePage?}
 //     Ranked, stub-filtered, fork-bundled semantic report (page JSON).
-//   POST /system/site-report.json  {query, domains, limit, format}
+//     Optionally seeded by an existing page: vector (precomputed embedding) >
+//     seed {site, slug} (stored page vector from farm disk) > text (embedded
+//     instead of query). excludePage {site, slug} drops the host page and its
+//     slug-fork family from the results; defaults to seed.
+//   POST /system/site-report.json  {query, domains, limit, format,
+//                                   vector?, seed?, text?, excludePage?}
 //     Which site should this page go on? Per-domain aggregation of the
 //     page-vector scan (page JSON, or flat JSON with format: 'flat').
+//     Same seed params; excludePage keeps an existing page from voting for
+//     its own home site.
 //   GET  /system/farm-search.json?q=…&pattern=…&limit=…
 //     Galactic keyword search — reads each site's own per-edit MiniSearch
 //     index (status/site-index.json). No index building.
+//   GET  /system/title-twins.json?slug=…&pattern=…&limit=…
+//     Which sites carry a page with this slug? Existence scan over each
+//     site's sitemap (forks share the slug) — [{domain, slug, title}].
 //   GET  /system/build-index.json?domains=…&force=…
 //     Proxy to the farm indexer (WIKI_INDEXER_URL) when configured; heavy
 //     embedding is the indexer's job (Pi5 on the Hitchhikers farm), never
@@ -56,8 +68,9 @@ const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm
 const embedder     = require('./embedder')
 const { buildReport } = require('./search-report')
 const { buildSiteReport } = require('./site-report')
-const { searchFarm, keywordReportPage } = require('./farm-search')
+const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
+const { galaxyRoot, galaxyCacheStats } = require('./galaxy-vectors')
 const { ceiling, grantingDomains, makeDedup, makeBucket, guardEnvelope } = require('./peer-guard')
 
 const MODEL_META = { model: 'BAAI/bge-small-en-v1.5', dim: 384 }
@@ -197,8 +210,13 @@ const appendPeerSections = (page, peerOutcomes) => {
 const startServer = ({ argv, app }) => {
   // Farm root: argv.status = {farm}/{thisDomain}/status  →  go up two levels
   const farmRoot = path.dirname(path.dirname(argv.status))
-  // primary farm is 'local'; extra farms (Nextcloud mirror) are 'public'
+  // primary farm is 'local'; extra farms (Nextcloud mirror) are 'public'.
+  // The galaxy tree (off-farm federation sites, written by the galaxy
+  // indexer) joins as kind 'galaxy' when present — never matched by '*',
+  // only by GALAXY, an explicit domain, or a roster (see farm-lib.js).
   const farms = [[farmRoot, 'local'], ...EXTRA_FARMS.map(f => [f, 'public'])]
+  const galaxyDir = galaxyRoot()
+  if (fs.existsSync(galaxyDir)) farms.push([galaxyDir, 'galaxy'])
   const restricted = loadRestricted(EXTRA_FARMS)
   const ctx = { farms, restricted, embed: embedText }
 
@@ -222,9 +240,11 @@ const startServer = ({ argv, app }) => {
   for (const route of ['/system/indexed-domains.json', '/system/semantic-vectors.json',
                        '/system/embed.json', '/system/search-report.json',
                        '/system/site-report.json',
-                       '/system/farm-search.json', '/system/build-index.json',
+                       '/system/farm-search.json', '/system/title-twins.json',
+                       '/system/build-index.json',
                        '/system/galaxy-search.json', '/system/peer-search.json',
-                       '/system/peer-hello.json', '/system/similarity-health.json']) {
+                       '/system/peer-hello.json', '/system/similarity-health.json',
+                       '/system/galaxy-registry.json']) {
     app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
   }
 
@@ -321,6 +341,17 @@ const startServer = ({ argv, app }) => {
     res.json(results)
   })
 
+  // ── GET /system/galaxy-registry.json ──────────────────────────────────────
+  // Read-only view of the galaxy site registry (written by the galaxy
+  // indexer host — the similarity server never writes it).
+  app.get('/system/galaxy-registry.json', (req, res) => {
+    cors(res)
+    fs.readFile(path.join(galaxyDir, 'registry.json'), 'utf8', (err, data) => {
+      if (err) return res.status(404).json({ error: 'no galaxy registry on this host' })
+      res.type('application/json').send(data)
+    })
+  })
+
   // ── GET /system/semantic-vectors.json[?domain=] ────────────────────────────
   app.get('/system/semantic-vectors.json', (req, res) => {
     cors(res)
@@ -337,10 +368,17 @@ const startServer = ({ argv, app }) => {
     })
   })
 
-  // ── GET /system/embed.json?text=… ──────────────────────────────────────────
-  app.get('/system/embed.json', async (req, res) => {
+  // ── GET|POST /system/embed.json ────────────────────────────────────────────
+  // GET ?text=… suits short queries; POST {text} carries whole-page prose —
+  // long text in a GET query string overflows Node's header limit and dies
+  // with 431 before any handler runs. One handler, both verbs (the semindex
+  // dual-verb house pattern).
+  const embedHandler = async (req, res) => {
     cors(res)
-    const text = req.query.text
+    let text = req.query.text
+    if (!text && req.method === 'POST') {
+      try { text = (await readBody(req)).text } catch { /* fall through to 400 */ }
+    }
     if (!text) return res.status(400).json({ error: 'text parameter required' })
     try {
       res.json({ vector: await embedText(text) })
@@ -349,7 +387,28 @@ const startServer = ({ argv, app }) => {
       res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 502)
         .json({ error: `embedding unavailable: ${e.message}` })
     }
-  })
+  }
+  app.get('/system/embed.json', embedHandler)
+  app.post('/system/embed.json', embedHandler)
+
+  // Seed params shared by the report routes: a report can be seeded by an
+  // existing page rather than typed text. Validated here so the pipelines can
+  // trust shapes: vector must be a full-dimension number array; seed and
+  // excludePage need site+slug strings; excludePage defaults to seed (a
+  // report about a page should not lead with the page itself).
+  const seedOptsFrom = body => {
+    const vec = Array.isArray(body.vector) && body.vector.length === MODEL_META.dim &&
+      body.vector.every(x => typeof x === 'number') ? body.vector : null
+    const ref = v => (v && typeof v.site === 'string' && typeof v.slug === 'string')
+      ? { site: v.site, slug: v.slug } : null
+    const seed = ref(body.seed)
+    return {
+      vector: vec,
+      seed,
+      text: typeof body.text === 'string' && body.text.trim() ? body.text : null,
+      excludePage: ref(body.excludePage) || seed,
+    }
+  }
 
   // ── GET /system/similarity-health.json — embedder supervisor state ────────
   app.get('/system/similarity-health.json', (req, res) => {
@@ -359,11 +418,16 @@ const startServer = ({ argv, app }) => {
       version: PLUGIN_VERSION,
       ...MODEL_META,
       embedder: EMBED_URL ? { via: 'url', url: EMBED_URL } : embedder.status(),
+      galaxy: fs.existsSync(galaxyDir)
+        ? { root: galaxyDir, cache: galaxyCacheStats() }
+        : null,
     })
   })
 
   // ── POST /system/search-report.json ────────────────────────────────────────
   // body.farms: peer farms asked to continue the search (FARM prototype).
+  // Optional page seed: {vector | seed: {site, slug} | text} + excludePage —
+  // query stays required (report title + title-term boost). See seedOptsFrom.
   app.post('/system/search-report.json', async (req, res) => {
     cors(res)
     try {
@@ -371,7 +435,7 @@ const startServer = ({ argv, app }) => {
       if (!body.query) return res.status(400).json({ error: 'query required' })
       const page = await buildReport(
         body.query, body.domains || ['*'], body.limit || 10, ctx,
-        body.threshold ?? null, !!body.live)
+        body.threshold ?? null, !!body.live, seedOptsFrom(body))
       if (Array.isArray(body.farms) && body.farms.length) {
         const envelope = {
           query: body.query, kind: 'report', limit: body.limit || 10,
@@ -399,11 +463,28 @@ const startServer = ({ argv, app }) => {
       if (!body.query) return res.status(400).json({ error: 'query required' })
       res.json(await buildSiteReport(
         body.query, body.domains || ['*'], body.limit || 10, ctx,
-        body.format || null))
+        body.format || null, seedOptsFrom(body)))
     } catch (e) {
       console.error('[wiki-plugin-similarity] site-report error:', e.message)
       res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)
         .json({ error: `site-report failed: ${e.message}` })
+    }
+  })
+
+  // ── GET /system/title-twins.json?slug=…&pattern=…&limit=… ────────────────
+  // Which sites carry a page with this slug? An existence scan over each
+  // site's own sitemap (mtime-cached), not a ranked search — forks share the
+  // slug by definition. Answers [{domain, slug, title}].
+  app.get('/system/title-twins.json', (req, res) => {
+    cors(res)
+    const slug = (req.query.slug || '').trim()
+    if (!slug) return res.status(400).json({ error: 'slug parameter required' })
+    const patterns = (req.query.pattern || '*').split(',').map(p => p.trim()).filter(Boolean)
+    const limit = parseInt(req.query.limit) || 25
+    try {
+      res.json(findTwins(farms, patterns, restricted, slug, limit))
+    } catch (e) {
+      res.status(500).json({ error: `title-twins failed: ${e.message}` })
     }
   })
 

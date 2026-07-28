@@ -24,7 +24,7 @@ const path   = require('node:path')
 const crypto = require('node:crypto')
 
 const { listDomains } = require('./farm-lib')
-const { loadVectors, dot } = require('./search-report')
+const { loadVectors, dot, seedVector } = require('./search-report')
 
 const SITE_TOP_K          = 5     // neighbourhood size
 const SITE_TOPK_WEIGHT    = 0.7
@@ -134,20 +134,28 @@ const siteReportPage = (query, sites, stats, limit, specs) => {
 // ── Entry point ───────────────────────────────────────────────────────────────
 // Same context shape as buildReport: farms [[root, kind], ...], restricted
 // Set, embed async text → number[], optional exclude Set.
+// seedOpts: {vector, seed: {site, slug}, text, excludePage: {site, slug}} —
+// same precedence as buildReport (see search-report.js seedVector). For a
+// placement question about an EXISTING page, excludePage drops that page's
+// own vector from its home site's scoring — otherwise the site it already
+// sits on wins on the strength of the page itself.
 
 const buildSiteReport = async (query, specs, limit,
                                { farms, restricted, embed, exclude },
-                               format = null) => {
+                               format = null, seedOpts = {}) => {
   const useSpecs = specs && specs.length ? specs : ['*']
   const patterns = useSpecs
     .map(s => ['PUBLIC', 'LOCAL', 'PRIVATE'].includes(s.toUpperCase()) ? s.toUpperCase() : s)
   let domains = listDomains(farms, patterns, restricted, 'status/semantic-vectors.json')
   if (exclude) domains = domains.filter(d => !exclude.has(d.domain))
-  const qvec = await embed(query)
+  const qvec = await seedVector(seedOpts, query, farms, embed)
 
+  const ex = seedOpts.excludePage
   let totalPages = 0
   const entries = domains.map(({ farm, domain }) => {
-    const pages = loadVectors(farm, domain)
+    let pages = loadVectors(farm, domain)
+    if (ex && ex.slug && domain === ex.site)
+      pages = pages.filter(p => p.slug !== ex.slug)
     totalPages += pages.length
     return { farm, domain, page_count: pages.length, pages }
   })

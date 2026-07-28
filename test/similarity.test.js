@@ -11,7 +11,7 @@ const parseDSL = text => {
   const specs = []
   const rosterRefs = []
   const farms = []
-  let threshold = null, limit = null, mode = 'search', live = false, force = false
+  let threshold = null, limit = null, mode = 'search', live = false, subject = false, force = false
   let ghostUrl = null, label = null
   const isCmd = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
   const val   = (line, kw) => line.slice(kw.length).replace(/^\s*:?\s*/, '').trim()
@@ -20,6 +20,7 @@ const parseDSL = text => {
     if (!line || line.startsWith('#')) continue
     const upper = line.toUpperCase()
     if (isCmd(upper, 'LIVE'))  { live = true; continue }
+    if (isCmd(upper, 'SUBJECT')) { subject = true; continue }
     if (isCmd(upper, 'AUTHOR')) {
       if (!specs.length && mode === 'search') mode = 'author'
       continue
@@ -78,7 +79,7 @@ const parseDSL = text => {
     }
     specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
   }
-  return { mode, specs, rosterRefs, farms, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, force, ghostUrl, label, thresholdSet: threshold !== null }
+  return { mode, specs, rosterRefs, farms, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, subject, force, ghostUrl, label, thresholdSet: threshold !== null }
 }
 
 const isGlob = spec => spec.includes('*') || spec.includes('?')
@@ -340,5 +341,32 @@ describe('parseDSL — ROSTER and FARM (federation)', () => {
   })
   it('KEYWORD sets keyword mode', () => {
     assert.equal(parseDSL('KEYWORD').mode, 'keyword')
+  })
+})
+
+describe('parseDSL — SUBJECT modifier', () => {
+  it('is a modifier, not a mode — composes with REPORT', () => {
+    const r = parseDSL('SUBJECT\nREPORT\n*')
+    assert.equal(r.subject, true)
+    assert.equal(r.mode, 'report')
+    assert.deepEqual(r.specs, ['*'])
+  })
+
+  it('composes with SIMILAR regardless of line order', () => {
+    for (const text of ['SIMILAR: medium\nSUBJECT', 'SUBJECT\nSIMILAR: medium']) {
+      const r = parseDSL(text)
+      assert.equal(r.subject, true, text)
+      assert.equal(r.mode, 'similar', text)
+    }
+  })
+
+  it('does not swallow domains that start with the keyword letters', () => {
+    const r = parseDSL('subjective.example.com')
+    assert.equal(r.subject, false)
+    assert.deepEqual(r.specs, ['subjective.example.com'])
+  })
+
+  it('defaults off', () => {
+    assert.equal(parseDSL('KEYWORD\n*').subject, false)
   })
 })
