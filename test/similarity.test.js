@@ -1,106 +1,17 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-// Pure functions extracted for testing (mirrors src/client/similarity.js)
-
-const SIMILAR_THRESHOLDS = { high: 0.78, medium: 0.68, low: 0.58 }
-const DEFAULT_THRESHOLD  = SIMILAR_THRESHOLDS.medium
-const DEFAULT_LIMIT      = 10
-
-const parseDSL = text => {
-  const specs = []
-  const rosterRefs = []
-  const farms = []
-  let threshold = null, limit = null, mode = 'search', live = false, subject = false, force = false
-  let ghostUrl = null, label = null
-  const isCmd = (upper, kw) => upper === kw || (upper.startsWith(kw) && /^[\s:]/.test(upper.slice(kw.length)))
-  const val   = (line, kw) => line.slice(kw.length).replace(/^\s*:?\s*/, '').trim()
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (!line || line.startsWith('#')) continue
-    const upper = line.toUpperCase()
-    if (isCmd(upper, 'LIVE'))  { live = true; continue }
-    if (isCmd(upper, 'SUBJECT')) { subject = true; continue }
-    if (isCmd(upper, 'AUTHOR')) {
-      if (!specs.length && mode === 'search') mode = 'author'
-      continue
-    }
-    if (isCmd(upper, 'REPORT')) {
-      if (mode === 'search') mode = 'report'
-      continue
-    }
-    if (isCmd(upper, 'BUILD')) {
-      if (mode === 'search') mode = 'build'
-      continue
-    }
-    if (isCmd(upper, 'FORCE')) { force = true; continue }
-    if (isCmd(upper, 'GHOST')) {
-      ghostUrl = val(line, 'GHOST')
-      if (mode === 'search') mode = 'ghost'
-      continue
-    }
-    if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
-    if (isCmd(upper, 'KEYWORD')) {
-      if (mode === 'search') mode = 'keyword'
-      continue
-    }
-    if (isCmd(upper, 'SITES')) {
-      if (mode === 'search') mode = 'sites'
-      continue
-    }
-    if (isCmd(upper, 'ROSTER')) {
-      const ref = val(line, 'ROSTER')
-      if (ref) rosterRefs.push(ref)
-      continue
-    }
-    if (isCmd(upper, 'FARM')) {
-      const peer = val(line, 'FARM')
-      if (peer) farms.push(peer)
-      continue
-    }
-    if (isCmd(upper, 'LIST')) {
-      if (!specs.length && mode === 'search') mode = 'list'
-      continue
-    }
-    if (isCmd(upper, 'SIMILAR')) {
-      const level = val(upper, 'SIMILAR').toLowerCase()
-      threshold = SIMILAR_THRESHOLDS[level] || DEFAULT_THRESHOLD
-      if (!specs.length && mode === 'search') mode = 'similar'
-      continue
-    }
-    if (isCmd(upper, 'THRESHOLD')) {
-      const tv = val(line, 'THRESHOLD')
-      threshold = SIMILAR_THRESHOLDS[tv.toLowerCase()] ?? (parseFloat(tv) || DEFAULT_THRESHOLD)
-      continue
-    }
-    if (isCmd(upper, 'LIMIT')) {
-      limit = parseInt(val(line, 'LIMIT')) || DEFAULT_LIMIT
-      continue
-    }
-    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE'].includes(upper) ? upper : line)
-  }
-  return { mode, specs, rosterRefs, farms, threshold: threshold ?? DEFAULT_THRESHOLD, limit: limit ?? DEFAULT_LIMIT, live, subject, force, ghostUrl, label, thresholdSet: threshold !== null }
-}
-
-const isGlob = spec => spec.includes('*') || spec.includes('?')
-const slugify = title => title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-const vectorUrl = (domain, origin = 'https://plugin.fedwiki.club') =>
-  `${origin}/system/semantic-vectors.json?domain=${encodeURIComponent(domain)}`
-
-const cosineScan = (queryVec, domainEntries, { threshold, limit, excludeSlug, excludeDomain }) => {
-  const results = []
-  for (const { domain, pages } of domainEntries) {
-    for (const { slug, title, vector } of pages) {
-      if (slug === excludeSlug && domain === excludeDomain) continue
-      let dot = 0
-      for (let i = 0; i < queryVec.length; i++) dot += queryVec[i] * vector[i]
-      if (dot >= threshold) results.push({ domain, slug, title, score: dot })
-    }
-  }
-  results.sort((a, b) => b.score - a.score)
-  return results.slice(0, limit)
-}
-
+// The real implementation, imported — not a copy. A parallel copy of the parser
+// lived here until 2026-07-30 and had already drifted: it never knew GALAXY, so
+// every scope-keyword test passed against a parser the plugin does not ship.
+import { parseDSL, isGlob, isScope, SIMILAR_THRESHOLDS, DEFAULT_THRESHOLD, DEFAULT_LIMIT }
+  from '../src/client/dsl.js'
+import { slugify } from '../src/client/scope.js'
+// vectorUrl reads window.location.origin — the browser global the copied version
+// avoided by building URLs against the TARGET domain instead. That was the drift:
+// the real client proxies through the current origin to stay same-origin.
+globalThis.window = { location: { origin: 'https://wiki.example' } }
+import { vectorUrl, cosineScan } from '../src/client/vectors.js'
 // ── DSL tests ─────────────────────────────────────────────────────────────────
 
 describe('parseDSL — domain specs', () => {
@@ -256,14 +167,14 @@ describe('vectorUrl', () => {
   it('uses same-origin proxy with domain query', () => {
     assert.equal(
       vectorUrl('plugin.fedwiki.club'),
-      'https://plugin.fedwiki.club/system/semantic-vectors.json?domain=plugin.fedwiki.club',
+      'https://wiki.example/system/semantic-vectors.json?domain=plugin.fedwiki.club',
     )
   })
 
   it('encodes domain query values', () => {
     assert.equal(
       vectorUrl('domain with spaces.test'),
-      'https://plugin.fedwiki.club/system/semantic-vectors.json?domain=domain%20with%20spaces.test',
+      'https://wiki.example/system/semantic-vectors.json?domain=domain%20with%20spaces.test',
     )
   })
 })

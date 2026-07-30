@@ -1,0 +1,60 @@
+{
+  "title": "Semantic Search",
+  "story": [
+    {
+      "type": "paragraph",
+      "id": "6a46bc37dd15ddfb",
+      "text": "Semantic search across every indexed domain this wiki can reach. Type a phrase \u2014 the plugin embeds it, compares it against the prebuilt page vectors, and ranks the closest pages by meaning rather than by word. Add a line reading GALAXY to search off-farm federation sites instead, where this host keeps a galaxy index."
+    },
+    {
+      "type": "similarity",
+      "id": "ece1644752fdbfb5",
+      "text": "*\nLIMIT: 10"
+    },
+    {
+      "type": "paragraph",
+      "id": "3088fca5e9418d87",
+      "text": "More [[About Similarity Plugin]]"
+    }
+  ],
+  "journal": [
+    {
+      "type": "create",
+      "item": {
+        "title": "Semantic Search",
+        "story": []
+      },
+      "date": 1785390072037
+    },
+    {
+      "type": "add",
+      "id": "6a46bc37dd15ddfb",
+      "item": {
+        "type": "paragraph",
+        "id": "6a46bc37dd15ddfb",
+        "text": "Semantic search across every indexed domain this wiki can reach. Type a phrase \u2014 the plugin embeds it, compares it against the prebuilt page vectors, and ranks the closest pages by meaning rather than by word. Add a line reading GALAXY to search off-farm federation sites instead, where this host keeps a galaxy index."
+      },
+      "date": 1785390072037
+    },
+    {
+      "type": "add",
+      "id": "ece1644752fdbfb5",
+      "item": {
+        "type": "similarity",
+        "id": "ece1644752fdbfb5",
+        "text": "*\nLIMIT: 10"
+      },
+      "date": 1785390072037
+    },
+    {
+      "type": "add",
+      "id": "3088fca5e9418d87",
+      "item": {
+        "type": "paragraph",
+        "id": "3088fca5e9418d87",
+        "text": "More [[About Similarity Plugin]]"
+      },
+      "date": 1785390072037
+    }
+  ]
+}

@@ -71,7 +71,9 @@ const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
 const { galaxyRoot, galaxyCacheStats } = require('./galaxy-vectors')
-const { ceiling, grantingDomains, makeDedup, makeBucket, guardEnvelope } = require('./peer-guard')
+const { resolveAuthor } = require('./author-index')
+const { ceiling, grantingDomains, guardEnvelope } = require('./peer-guard')
+const { postToPeer, appendPeerSections, makePeerDesk, setModelMeta } = require('./peer')
 
 const MODEL_META = { model: 'BAAI/bge-small-en-v1.5', dim: 384 }
 const PLUGIN_VERSION = (() => {
@@ -140,72 +142,10 @@ const readBody = req =>
     req.on('error', reject)
   })
 
-// POST JSON to a peer farm's plugin server. Public peers speak https;
-// *.localhost peers speak http via a loopback lookup (Node's resolver does
-// not know RFC 6761 subdomains). Public domains follow /etc/hosts, so
-// Offline Edit Mode routes peer calls to the local mirror by construction.
-const postToPeer = (peer, routePath, body, timeoutMs = 30_000) =>
-  new Promise((resolve, reject) => {
-    const isLocal = peer.endsWith('.localhost') || peer.startsWith('localhost')
-    const mod = isLocal ? http : https
-    const payload = JSON.stringify(body)
-    const opts = {
-      hostname: peer.split(':')[0],
-      port: peer.includes(':') ? peer.split(':')[1] : (isLocal ? 80 : 443),
-      path: routePath,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-      },
-      timeout: timeoutMs,
-    }
-    if (isLocal) opts.lookup = (h, o, cb) => cb(null, [{ address: '127.0.0.1', family: 4 }])
-    const req = mod.request(opts, res => {
-      let data = ''
-      res.on('data', chunk => { data += chunk })
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }) }
-        catch {
-          resolve({ status: res.statusCode,
-            body: { error: `no similarity server answered (${res.statusCode})` } })
-        }
-      })
-    })
-    req.on('timeout', () => { req.destroy(new Error('peer timeout')) })
-    req.on('error', reject)
-    req.write(payload)
-    req.end()
-  })
-
-// Append peer farms' results to a locally-built report page. Each peer gets
-// its own section; provenance rides on the reference items' site field.
-// Scores merge visually only when the peer declares the same embedding model.
-const appendPeerSections = (page, peerOutcomes) => {
-  const mk = () => crypto.randomBytes(8).toString('hex')
-  for (const { peer, status, body } of peerOutcomes) {
-    if (status === 200 && body.page) {
-      const sameModel = body.meta && body.meta.model === MODEL_META.model
-      page.story.push({
-        type: 'markdown', id: mk(),
-        text: `# From ${peer}\n\n<small>${body.meta?.count ?? '?'} results — ` +
-          `model ${body.meta?.model || 'undeclared'}${sameModel ? '' :
-            ' (different model: scores not comparable with local results)'}</small>`,
-      })
-      for (const item of body.page.story || []) {
-        if (item.type === 'reference') page.story.push({ ...item, id: mk() })
-      }
-    } else {
-      page.story.push({
-        type: 'markdown', id: mk(),
-        text: `<small>Peer ${peer}: ${body?.error || `failed (${status})`}</small>`,
-      })
-    }
-  }
-  return page
-}
 
 // ── startServer — called by wiki-server/lib/plugins.js ────────────────────────
+
+setModelMeta(MODEL_META)
 
 const startServer = ({ argv, app }) => {
   // Farm root: argv.status = {farm}/{thisDomain}/status  →  go up two levels
@@ -248,78 +188,10 @@ const startServer = ({ argv, app }) => {
     app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
   }
 
-  // Peer federation guards (shared across peer requests). Rate limits are
-  // keyed by remote IP — never by the asserted origin — plus a global cap.
-  const isDuplicate     = makeDedup()
-  const takeIpToken     = makeBucket()
-  const takeGlobalToken = makeBucket({ capacity: 120, refillPerSec: 2, maxKeys: 1 })
-
-  const requestIp = req =>
-    (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
-    req.socket.remoteAddress || 'unknown'
-
-  // GET JSON from a peer (hello probe) — same transport rules as postToPeer.
-  const getFromPeer = (peer, routePath, timeoutMs = 10_000) =>
-    new Promise((resolve, reject) => {
-      const isLocal = peer.endsWith('.localhost') || peer.startsWith('localhost')
-      const mod = isLocal ? http : https
-      const opts = {
-        hostname: peer.split(':')[0],
-        port: peer.includes(':') ? peer.split(':')[1] : (isLocal ? 80 : 443),
-        path: routePath,
-        timeout: timeoutMs,
-      }
-      if (isLocal) opts.lookup = (h, o, cb) => cb(null, [{ address: '127.0.0.1', family: 4 }])
-      const req = mod.get(opts, res => {
-        let data = ''
-        res.on('data', chunk => { data += chunk })
-        res.on('end', () => {
-          try { resolve({ status: res.statusCode, body: JSON.parse(data) }) }
-          catch { resolve({ status: res.statusCode, body: null }) }
-        })
-      })
-      req.on('timeout', () => { req.destroy(new Error('peer timeout')) })
-      req.on('error', reject)
-    })
-
-  // Hello probe cache: peer → {at, ok, body}. TTL 1h, small LRU.
-  const helloCache = new Map()
-  const HELLO_TTL = 60 * 60_000
-
-  const probePeer = async peer => {
-    const hit = helloCache.get(peer)
-    if (hit && Date.now() - hit.at < HELLO_TTL) return hit
-    let entry
-    try {
-      const { status, body } = await getFromPeer(peer, '/system/peer-hello.json')
-      entry = { at: Date.now(), ok: status === 200 && body && body.plugin, body }
-    } catch {
-      entry = { at: Date.now(), ok: false, body: null }
-    }
-    helloCache.set(peer, entry)
-    if (helloCache.size > 200) helloCache.delete(helloCache.keys().next().value)
-    return entry
-  }
-
-  const askPeers = async (peers, envelope) => {
-    const outcomes = await Promise.all(peers.map(async peer => {
-      const hello = await probePeer(peer)
-      if (!hello.ok) {
-        return { peer, status: 0,
-          body: { error: 'peer does not answer hello — no similarity federation there' } }
-      }
-      if (hello.body.federation && hello.body.federation.enabled === false) {
-        return { peer, status: 0, body: { error: 'peer has federation switched off' } }
-      }
-      try {
-        const { status, body } = await postToPeer(peer, '/system/peer-search.json', envelope)
-        return { peer, status, body }
-      } catch (e) {
-        return { peer, status: 0, body: { error: e.message } }
-      }
-    }))
-    return outcomes
-  }
+  // Peer federation transport, probes and rate limits live in ./peer.js —
+  // one desk per server, built once at startup.
+  const { requestIp, getFromPeer, probePeer, askPeers,
+          isDuplicate, takeIpToken, takeGlobalToken } = makePeerDesk()
 
   // ── GET /system/indexed-domains.json?pattern=glob1,glob2 ──────────────────
   app.get('/system/indexed-domains.json', (req, res) => {
@@ -433,14 +305,44 @@ const startServer = ({ argv, app }) => {
     try {
       const body = await readBody(req)
       if (!body.query) return res.status(400).json({ error: 'query required' })
+
+      // body.author narrows to the sites that person owns here. It is applied
+      // locally AND forwarded to peers, who resolve the same plain name against
+      // their own records — an endpoint that accepted the field but only
+      // honoured it remotely would be a trap.
+      let domains = body.domains || ['*']
+      if (body.author) {
+        const res_ = resolveAuthor(farms, String(body.author).slice(0, 100))
+        if (res_.ambiguous) {
+          return res.status(409).json({
+            error: `"${body.author}" matches more than one account here`,
+            accounts: res_.ambiguous,
+            hint: 'ask again with a username',
+          })
+        }
+        if (res_.available !== false) {
+          // Author narrows on a different axis from scope, so the two INTERSECT
+          // — replacing the caller's scope would silently widen a search that
+          // asked to be narrow. Expand their patterns first, then keep only
+          // what this author owns.
+          const owned = new Set(res_.sites)
+          domains = listDomains(farms, domains, restricted)
+            .map(d => d.domain)
+            .filter(d => owned.has(d))
+          if (!domains.length) domains = [' none']   // match nothing, not everything
+        }
+      }
+
       const page = await buildReport(
-        body.query, body.domains || ['*'], body.limit || 10, ctx,
+        body.query, domains, body.limit || 10, ctx,
         body.threshold ?? null, !!body.live, seedOptsFrom(body))
       if (Array.isArray(body.farms) && body.farms.length) {
         const envelope = {
           query: body.query, kind: 'report', limit: body.limit || 10,
           hops: 0, requestId: crypto.randomBytes(8).toString('hex'),
           origin: req.hostname,
+          // the name as typed, never our resolved username
+          ...(body.author ? { author: String(body.author).slice(0, 100) } : {}),
         }
         appendPeerSections(page, await askPeers(body.farms.slice(0, 8), envelope))
       }
@@ -600,7 +502,35 @@ const startServer = ({ argv, app }) => {
           hint: 'a site opts in with FROM lines on its Federated Farm Search page',
         })
       }
-      const grantedNames = granted.map(d => d.domain)
+      let grantedNames = granted.map(d => d.domain)
+
+      // An author filter is one more field on the envelope, and it travels as
+      // the plain name the asker typed — never a username resolved against
+      // their map. We answer from OUR OWN ownership records: we cannot resolve
+      // another farm's pseudonyms, only ours. A farm that keeps no records
+      // ignores the field and answers unfiltered rather than failing.
+      let authorFilter = 'none'
+      if (envelope.author) {
+        const who = String(envelope.author).slice(0, 100)
+        const res = resolveAuthor(farms, who)
+        if (res.available === false) {
+          authorFilter = 'ignored'          // no ownership records on this farm
+        } else if (res.ambiguous) {
+          authorFilter = 'ambiguous'        // shared display name — never guess
+          grantedNames = []
+        } else {
+          authorFilter = 'applied'
+          const owned = new Set(res.sites)
+          grantedNames = grantedNames.filter(d => owned.has(d))
+        }
+      }
+      if (!grantedNames.length) {
+        return res.json({
+          page: { title: `${envelope.query} Report`, story: [] },
+          meta: { ...MODEL_META, version: PLUGIN_VERSION, farm: req.hostname,
+                  sites: 0, count: 0, authorFilter },
+        })
+      }
 
       const limit = envelope.limit || 10
       let page
@@ -614,7 +544,7 @@ const startServer = ({ argv, app }) => {
       }
       const count = page.story.filter(i => i.type === 'reference').length
       res.json({ page, meta: { ...MODEL_META, version: PLUGIN_VERSION,
-        farm: req.hostname, sites: grantedNames.length, count } })
+        farm: req.hostname, sites: grantedNames.length, count, authorFilter } })
     } catch (e) {
       console.error('[wiki-plugin-similarity] peer-search error:', e.message)
       res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)

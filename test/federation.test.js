@@ -6,10 +6,12 @@ import guard from '../server/peer-guard.js'
 const { ceiling, parseGrants, grantsAdmit, makeDedup, makeBucket,
         guardEnvelope, SITE_LINE } = guard
 
-// ── Roster line semantics (mirrors src/client/similarity.js SITE_LINE etc.) ──
+// ── Roster line semantics ────────────────────────────────────────────────────
+// The client's own regexes, imported rather than restated. SITE_LINE above comes
+// from the server's peer-guard; the client keeps its own copy for the browser —
+// one rule, two runtimes, which is the remaining duplication worth watching.
 
-const ROSTER_LINE = /^ROSTER ([A-Za-z0-9.\-:]+\/[a-z0-9-]+)$/
-const REFS_LINE   = /^REFERENCES ([A-Za-z0-9.\-:]+\/[a-z0-9-]+)$/
+import { ROSTER_LINE, REFS_LINE } from '../src/client/scope.js'
 
 describe('roster line classification', () => {
   it('matches bare domains as sites', () => {
