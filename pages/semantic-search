@@ -4,12 +4,37 @@
     {
       "type": "paragraph",
       "id": "6a46bc37dd15ddfb",
-      "text": "Semantic search across every indexed domain this wiki can reach. Type a phrase \u2014 the plugin embeds it, compares it against the prebuilt page vectors, and ranks the closest pages by meaning rather than by word. Add a line reading GALAXY to search off-farm federation sites instead, where this host keeps a galaxy index."
+      "text": "Semantic search across every indexed domain this wiki can reach. Type a phrase \u2014 the plugin embeds it, compares it against the prebuilt page vectors, and ranks the closest pages by meaning rather than by word."
+    },
+    {
+      "type": "paragraph",
+      "id": "833526e264c6916f",
+      "text": "Here we search across the entire [[Farm]]:"
     },
     {
       "type": "similarity",
       "id": "ece1644752fdbfb5",
-      "text": "*\nLIMIT: 10"
+      "text": "*\nREPORT\nLIMIT: 10"
+    },
+    {
+      "type": "markdown",
+      "id": "6ceb4b9c37f3c06c",
+      "text": "And here we search [[the federation]] (excluding our farm):"
+    },
+    {
+      "type": "similarity",
+      "id": "e659640772a8340b",
+      "text": "GALAXY\nREPORT\nLIMIT: 10"
+    },
+    {
+      "type": "markdown",
+      "id": "b8569a0e6aef5f8a",
+      "text": "You may be interested in finding a suitable [[site]] on the farm, where these pages may live:"
+    },
+    {
+      "type": "similarity",
+      "id": "3cd8b0ef7d1c10ac",
+      "text": "*\nSITES\nLIMIT: 5"
     },
     {
       "type": "paragraph",
@@ -24,7 +49,7 @@
         "title": "Semantic Search",
         "story": []
       },
-      "date": 1785390072037
+      "date": 1785399758533
     },
     {
       "type": "add",
@@ -32,9 +57,19 @@
       "item": {
         "type": "paragraph",
         "id": "6a46bc37dd15ddfb",
-        "text": "Semantic search across every indexed domain this wiki can reach. Type a phrase \u2014 the plugin embeds it, compares it against the prebuilt page vectors, and ranks the closest pages by meaning rather than by word. Add a line reading GALAXY to search off-farm federation sites instead, where this host keeps a galaxy index."
+        "text": "Semantic search across every indexed domain this wiki can reach. Type a phrase \u2014 the plugin embeds it, compares it against the prebuilt page vectors, and ranks the closest pages by meaning rather than by word."
       },
-      "date": 1785390072037
+      "date": 1785399758533
+    },
+    {
+      "type": "add",
+      "id": "833526e264c6916f",
+      "item": {
+        "type": "paragraph",
+        "id": "833526e264c6916f",
+        "text": "Here we search across the entire [[Farm]]:"
+      },
+      "date": 1785399758533
     },
     {
       "type": "add",
@@ -42,9 +77,49 @@
       "item": {
         "type": "similarity",
         "id": "ece1644752fdbfb5",
-        "text": "*\nLIMIT: 10"
+        "text": "*\nREPORT\nLIMIT: 10"
       },
-      "date": 1785390072037
+      "date": 1785399758533
+    },
+    {
+      "type": "add",
+      "id": "6ceb4b9c37f3c06c",
+      "item": {
+        "type": "markdown",
+        "id": "6ceb4b9c37f3c06c",
+        "text": "And here we search [[the federation]] (excluding our farm):"
+      },
+      "date": 1785399758533
+    },
+    {
+      "type": "add",
+      "id": "e659640772a8340b",
+      "item": {
+        "type": "similarity",
+        "id": "e659640772a8340b",
+        "text": "GALAXY\nREPORT\nLIMIT: 10"
+      },
+      "date": 1785399758533
+    },
+    {
+      "type": "add",
+      "id": "b8569a0e6aef5f8a",
+      "item": {
+        "type": "markdown",
+        "id": "b8569a0e6aef5f8a",
+        "text": "You may be interested in finding a suitable [[site]] on the farm, where these pages may live:"
+      },
+      "date": 1785399758533
+    },
+    {
+      "type": "add",
+      "id": "3cd8b0ef7d1c10ac",
+      "item": {
+        "type": "similarity",
+        "id": "3cd8b0ef7d1c10ac",
+        "text": "*\nSITES\nLIMIT: 5"
+      },
+      "date": 1785399758533
     },
     {
       "type": "add",
@@ -54,7 +129,7 @@
         "id": "3088fca5e9418d87",
         "text": "More [[About Similarity Plugin]]"
       },
-      "date": 1785390072037
+      "date": 1785399758533
     }
   ]
 }
