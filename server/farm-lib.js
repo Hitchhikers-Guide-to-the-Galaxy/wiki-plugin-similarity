@@ -34,11 +34,38 @@ const globMatch = (pattern, str) => {
 //            explicit opt-in (GALAXY, an explicit domain, or a roster)
 //   PUBLIC   domains in 'public' farms (Nextcloud mirror)
 //   LOCAL    domains in the primary ('local') farm
-//   PRIVATE  public domains marked "restricted": true in a farm config
+//   PRIVATE  domains marked restricted (see loadRestricted) on any farm
 //   GALAXY   off-farm federation sites in the 'galaxy' tree (see galaxy-vectors.js)
 
-const loadRestricted = publicFarms => {
-  const restricted = new Set()
+// ── Restricted domains ────────────────────────────────────────────────────────
+// A Set of exact names PLUS a list of globs (WIKI_RESTRICTED_DOMAINS), so a
+// whole namespace such as *.private.fish can be restricted with one env line
+// without touching wikiDomains (which would also switch on login-to-view).
+// `has(domain)` answers for both, so every caller's `restricted.has(...)`
+// keeps working unchanged.
+
+class RestrictedSet extends Set {
+  constructor(names = [], globs = []) {
+    super(names)
+    this.globs = [...globs]
+  }
+  has(domain) {
+    return super.has(domain) || this.globs.some(g => globMatch(g, domain))
+  }
+}
+
+// Sources, all optional and merged:
+//   opts.wikiDomains  the LOCAL farm's own wikiDomains map — wiki's farm.js
+//                     hands it to every plugin as argv.wikiDomains, so the
+//                     primary farm's restricted sites count without any
+//                     WIKI_EXTRA_FARMS at all
+//   opts.globs        WIKI_RESTRICTED_DOMAINS globs
+//   publicFarms       config-*.json files in extra farm roots (the mirror)
+const loadRestricted = (publicFarms, opts = {}) => {
+  const restricted = new RestrictedSet([], opts.globs || [])
+  for (const [domain, o] of Object.entries(opts.wikiDomains || {})) {
+    if (o && o.restricted) restricted.add(domain)
+  }
   for (const farm of publicFarms) {
     let files
     try { files = fs.readdirSync(farm) } catch { continue }
@@ -60,7 +87,7 @@ const matchesAny = (domain, kind, patterns, restricted) =>
     if (p === '*') return kind !== 'galaxy'
     if (p === 'PUBLIC') return kind === 'public'
     if (p === 'LOCAL') return kind === 'local'
-    if (p === 'PRIVATE') return kind === 'public' && restricted.has(domain)
+    if (p === 'PRIVATE') return kind !== 'galaxy' && restricted.has(domain)
     if (p === 'GALAXY') return kind === 'galaxy'
     return globMatch(p, domain)
   })
@@ -102,4 +129,4 @@ const findInFarms = (farms, domain, relPath) => {
   return null
 }
 
-module.exports = { globMatch, loadRestricted, matchesAny, listDomains, findInFarms }
+module.exports = { globMatch, RestrictedSet, loadRestricted, matchesAny, listDomains, findInFarms }

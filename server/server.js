@@ -74,6 +74,7 @@ const { galaxyRoot, galaxyCacheStats } = require('./galaxy-vectors')
 const { resolveAuthor } = require('./author-index')
 const { ceiling, grantingDomains, guardEnvelope } = require('./peer-guard')
 const { postToPeer, appendPeerSections, makePeerDesk, setModelMeta } = require('./peer')
+const { parseNets, isTrusted } = require('./trust')
 
 const MODEL_META = { model: 'BAAI/bge-small-en-v1.5', dim: 384 }
 const PLUGIN_VERSION = (() => {
@@ -86,6 +87,12 @@ const EMBED_URL   = process.env.WIKI_EMBED_URL || null
 const INDEXER_URL = process.env.WIKI_INDEXER_URL || null
 // Optional additional farm roots, colon-separated absolute paths.
 const EXTRA_FARMS = (process.env.WIKI_EXTRA_FARMS || '').split(':').filter(Boolean)
+// Restricted-domain globs, comma-separated (e.g. "*.private.fish,*.pi5.private.fish").
+// Restricted sites are hidden from every route unless the caller is trusted —
+// see ./trust.js and WIKI_TRUSTED_NETS.
+const RESTRICTED_GLOBS = (process.env.WIKI_RESTRICTED_DOMAINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean)
+const TRUSTED_NETS = parseNets()
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -157,11 +164,28 @@ const startServer = ({ argv, app }) => {
   const farms = [[farmRoot, 'local'], ...EXTRA_FARMS.map(f => [f, 'public'])]
   const galaxyDir = galaxyRoot()
   if (fs.existsSync(galaxyDir)) farms.push([galaxyDir, 'galaxy'])
-  const restricted = loadRestricted(EXTRA_FARMS)
+  // Restricted = the local farm's own wikiDomains (argv, merged by wiki's
+  // farm.js) + WIKI_RESTRICTED_DOMAINS globs + extra farms' config files.
+  const restricted = loadRestricted(EXTRA_FARMS,
+    { wikiDomains: argv.wikiDomains, globs: RESTRICTED_GLOBS })
   const ctx = { farms, restricted, embed: embedText }
 
+  // Who may see restricted sites (./trust.js): owner session, a tool on this
+  // host, or a proxied client on a trusted net. Everyone else gets the
+  // public view — `ctxFor(req)` carries the exclusion into every scan.
+  const ownerFile = path.join(argv.status || '', 'owner.json')
+  const trusted = req => isTrusted(req, {
+    securityhandler: app.securityhandler,
+    ownerFileExists: (() => { try { return fs.existsSync(ownerFile) } catch { return false } })(),
+    nets: TRUSTED_NETS,
+  })
+  const ctxFor = req => trusted(req) ? ctx : { ...ctx, exclude: restricted }
+  const visible = (req, domain) => !restricted.has(domain) || trusted(req)
+
   console.log('[wiki-plugin-similarity] registering /system routes, farms:',
-    farms.map(([f]) => f).join(', '))
+    farms.map(([f]) => f).join(', '),
+    `| restricted: ${restricted.size} names + ${restricted.globs.length} globs`,
+    `| trusted nets: ${TRUSTED_NETS.join(' ')}`)
 
   // Warm the embedding model in the background so the first query is fast.
   if (!EMBED_URL) embedder.warm()
@@ -200,6 +224,7 @@ const startServer = ({ argv, app }) => {
     const patterns = raw.split(',').map(p => p.trim()).filter(Boolean)
     const limit    = parseInt(req.query.limit) || null
     let results = listDomains(farms, patterns, restricted, 'status/semantic-vectors.json')
+      .filter(({ domain }) => visible(req, domain))
       .map(({ farm, domain }) => {
         let pageCount = null
         try {
@@ -228,6 +253,11 @@ const startServer = ({ argv, app }) => {
   app.get('/system/semantic-vectors.json', (req, res) => {
     cors(res)
     const domain  = req.query.domain || req.hostname || 'localhost'
+    // Restricted vectors are as private as the pages: titles ride in the file
+    // and the vectors themselves leak topic structure.
+    if (!visible(req, domain)) {
+      return res.status(403).json({ error: `${domain} is restricted` })
+    }
     const vecFile = findInFarms(farms, domain, 'status/semantic-vectors.json')
     if (!vecFile) {
       return res.status(404).json({ error: `vectors not found for ${domain}` })
@@ -293,6 +323,11 @@ const startServer = ({ argv, app }) => {
       galaxy: fs.existsSync(galaxyDir)
         ? { root: galaxyDir, cache: galaxyCacheStats() }
         : null,
+      // Restricted-site policy as this server sees it, and whether THIS
+      // caller is trusted — the one-line answer to "why can't I see X?".
+      restricted: { names: restricted.size, globs: restricted.globs },
+      trustedNets: TRUSTED_NETS,
+      callerTrusted: trusted(req),
     })
   })
 
@@ -334,7 +369,7 @@ const startServer = ({ argv, app }) => {
       }
 
       const page = await buildReport(
-        body.query, domains, body.limit || 10, ctx,
+        body.query, domains, body.limit || 10, ctxFor(req),
         body.threshold ?? null, !!body.live, seedOptsFrom(body))
       if (Array.isArray(body.farms) && body.farms.length) {
         const envelope = {
@@ -364,7 +399,7 @@ const startServer = ({ argv, app }) => {
       const body = await readBody(req)
       if (!body.query) return res.status(400).json({ error: 'query required' })
       res.json(await buildSiteReport(
-        body.query, body.domains || ['*'], body.limit || 10, ctx,
+        body.query, body.domains || ['*'], body.limit || 10, ctxFor(req),
         body.format || null, seedOptsFrom(body)))
     } catch (e) {
       console.error('[wiki-plugin-similarity] site-report error:', e.message)
@@ -384,7 +419,8 @@ const startServer = ({ argv, app }) => {
     const patterns = (req.query.pattern || '*').split(',').map(p => p.trim()).filter(Boolean)
     const limit = parseInt(req.query.limit) || 25
     try {
-      res.json(findTwins(farms, patterns, restricted, slug, limit))
+      res.json(findTwins(farms, patterns, restricted, slug, limit)
+        .filter(t => visible(req, t.domain)))
     } catch (e) {
       res.status(500).json({ error: `title-twins failed: ${e.message}` })
     }
@@ -408,7 +444,8 @@ const startServer = ({ argv, app }) => {
       const localPatterns = patterns.filter(p => !galaxySites.includes(p))
 
       const outcome = localPatterns.length
-        ? searchFarm(farms, localPatterns, restricted, q, limit)
+        ? searchFarm(farms, localPatterns, restricted, q, limit,
+                     trusted(req) ? null : restricted)
         : { results: [], searched: 0, matched: 0 }
       if (galaxySites.length) {
         const remote = await searchGalaxy(galaxySites, q, limit)
