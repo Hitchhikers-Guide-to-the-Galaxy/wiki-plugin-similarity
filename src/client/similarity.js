@@ -146,8 +146,14 @@ export const bind = (div, item) => {
 
   // Standardised pre-search status: what will run, over how much, with what config.
   // e.g. "Report ready — 18,583 pages across 267 domains · threshold 0.68 · limit 20 · LIVE"
+  // An explicit domain spec is taken at its word rather than looked up, so its
+  // page count is unknown — not zero. Saying "0 pages" there told a reader
+  // their site was unindexed when it was merely unqueried.
   const configSummary = (verb, pages, nDomains) => {
-    const parts = [`${verb} — ${pages.toLocaleString()} pages across ${nDomains} domains`]
+    const scale = pages > 0
+      ? `${pages.toLocaleString()} pages across ${nDomains} domains`
+      : `${nDomains} domain${nDomains === 1 ? '' : 's'}`
+    const parts = [`${verb} — ${scale}`]
     if (thresholdSet) parts.push(`threshold ${threshold}`)
     parts.push(`limit ${limit}`)
     if (live) parts.push('LIVE')

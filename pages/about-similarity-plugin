@@ -79,12 +79,12 @@
     {
       "type": "markdown",
       "id": "e91b3c7d25a4f608",
-      "text": "0.16.0 ships a **Search Tool** page and the two DSL words it needed. `STATUS` renders the state of the index behind the answers \u2014 which model, how many domains and pages, when the vectors were newest and oldest built, and whether a query can be embedded at all. `SITE` means the domain the page is served from, so a page shipped to every site in a farm can say \"search here\" without naming anywhere; leaving the scope empty means the whole farm in the report modes, which is not the same thing. `indexed-domains.json` gained a `built` date per domain to feed the status panel. 0.16.1 makes STATUS tell the truth about a delegated embedder: it now answers \"is search up?\" by embedding a word, not by reading a supervisor field that a proxy never sets \u2014 a farm pointed at a dead address was reporting itself healthy."
+      "text": "0.16.0 ships a **Search Tool** page and the two DSL words it needed. `STATUS` renders the state of the index behind the answers \u2014 which model, how many domains and pages, when the vectors were newest and oldest built, and whether a query can be embedded at all. `SITE` means the domain the page is served from, so a page shipped to every site in a farm can say \"search here\" without naming anywhere; leaving the scope empty means the whole farm in the report modes, which is not the same thing. `indexed-domains.json` gained a `built` date per domain to feed the status panel. 0.16.1 makes STATUS tell the truth about a delegated embedder: it now answers \"is search up?\" by embedding a word, not by reading a supervisor field that a proxy never sets \u2014 a farm pointed at a dead address was reporting itself healthy. 0.16.2 stops a scoped search claiming \"0 pages\": an explicit domain is taken at its word rather than looked up, so its page count is unknown, not zero."
     },
     {
       "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.16.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.16.2\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
