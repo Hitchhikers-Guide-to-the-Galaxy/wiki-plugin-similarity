@@ -83,8 +83,13 @@
     },
     {
       "type": "markdown",
+      "id": "a5f7d20c9e13b846",
+      "text": "0.17.0 takes over the **search door**. The `search` link at the foot of every page, and the search box beside it, both built their result page in JavaScript \u2014 a fixed set of items no owner could edit. They now open the Search Tool page instead, positioned right after the page you came from so `SUBJECT` reads it: clicking search on a page asks for pages like *that* page, with nothing typed. A query typed into the box is carried into the farm-wide search and run. If the Search Tool page is not served \u2014 an older plugin, or a server with no plugin routes \u2014 nothing is intercepted and the original behaviour stands. This is also why the plugin now declares an `editor` (which hands straight back to the standard text editor): plugin bundles load lazily by item type, and a plugin declaring an editor is the one thing wiki-client fetches on every page."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.16.2\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.17.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",

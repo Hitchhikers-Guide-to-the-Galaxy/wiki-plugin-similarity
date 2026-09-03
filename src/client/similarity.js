@@ -44,6 +44,7 @@ import { loadVectors, getEmbedding, lookupPageVector, cosineScan, loadDomainEntr
 import { resolveSubject, subjectNote } from './subject.js'
 import { readCache, writeCache, cacheAge } from './cache.js'
 import { STYLES, siteFlag } from './styles.js'
+import { install, takePending } from './searchdoor.js'
 
 // ── similarity item ────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export const emit = (div, item) => {
   if (mode === 'ghost') {
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-form">
           <button class="sim-btn">${label || 'Open'}</button>
         </div>
@@ -65,7 +66,7 @@ export const emit = (div, item) => {
   } else if (mode === 'build') {
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-form">
           <button class="sim-btn">${label || `Index ${specs.length ? specs.join(', ') : '*'}${force ? ' (force)' : ''}`}</button>
         </div>
@@ -75,14 +76,14 @@ export const emit = (div, item) => {
     const label = specs.length ? specs.join(', ') : '*'
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-status">Loading indexed domains (${label})…</div>
         <div class="sim-list"></div>
       </div>`)
   } else if (mode === 'status') {
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-status">Reading the state of the index…</div>
         <div class="sim-list"></div>
       </div>`)
@@ -90,7 +91,7 @@ export const emit = (div, item) => {
     const label = specs.length ? specs.join(', ') : 'current domain'
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-status">Finding similar pages across ${label}…</div>
         <div class="sim-results"></div>
       </div>`)
@@ -102,7 +103,7 @@ export const emit = (div, item) => {
       : 'Search wiki pages…'
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-form">
           <input class="sim-input" type="text" placeholder="${hint}" />
           <button class="sim-btn">${btnLabel}</button>
@@ -114,7 +115,7 @@ export const emit = (div, item) => {
     const label = specs.length ? specs.join(', ') : '(current domain)'
     div.html(`
       <style>${STYLES}</style>
-      <div class="similarity" data-id="${item.id}">
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-form">
           <input class="sim-input" type="text" placeholder="Search wiki pages…" />
           <button class="sim-btn">Search</button>
@@ -478,6 +479,14 @@ export const bind = (div, item) => {
     btn.addEventListener('click', doReport)
     input.addEventListener('keydown', e => { if (e.key === 'Enter') doReport() })
 
+    // A query typed into the wiki's search box and sent here by the search
+    // door. Only the farm-wide report takes it: that is the scope the box
+    // used to search, and picking any nearer one would quietly narrow it.
+    if (mode === 'report' && specs.join(',') === '*') {
+      const handed = takePending()
+      if (handed) { input.value = handed; doReport() }
+    }
+
   } else if (mode === 'sites') {
     // Sites mode — which site should this page go on? Server aggregates the
     // page-vector scan per domain; result opens as a ghost page.
@@ -692,5 +701,14 @@ export const bind = (div, item) => {
 
 if (typeof window !== 'undefined') {
   window.plugins = window.plugins || {}
-  window.plugins.similarity = { emit, bind }
+  // editor: declared so wiki-client's preLoadEditors fetches this plugin on
+  // every page, which is what puts the search door (below) on pages that carry
+  // no similarity item. It hands straight back to the standard text editor, so
+  // creating and editing an item behaves exactly as it did before.
+  window.plugins.similarity = {
+    emit,
+    bind,
+    editor: ($item, item) => window.wiki.textEditor($item, item),
+  }
+  install()
 }
