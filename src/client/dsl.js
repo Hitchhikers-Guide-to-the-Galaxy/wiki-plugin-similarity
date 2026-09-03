@@ -9,7 +9,8 @@ const DEFAULT_LIMIT      = 10
 
 // parseDSL returns { mode, specs, threshold, limit }
 //
-// mode: 'similar' if SIMILAR: is the first meaningful line (ambient auto-run),
+// mode: 'status' if STATUS is present — the state of the index behind the answers;
+//       'similar' if SIMILAR: is the first meaningful line (ambient auto-run),
 //        'search'  otherwise (interactive search form).
 //
 // Ward's convention: ALL-CAPS keyword as first word signals a mode switch.
@@ -85,6 +86,10 @@ const parseDSL = text => {
       if (!specs.length && mode === 'search') mode = 'list'
       continue
     }
+    if (isCmd(upper, 'STATUS')) {
+      if (mode === 'search') mode = 'status'
+      continue
+    }
     if (isCmd(upper, 'SIMILAR')) {
       const level = val(upper, 'SIMILAR').toLowerCase()
       threshold = SIMILAR_THRESHOLDS[level] || DEFAULT_THRESHOLD  // '' → medium
@@ -101,7 +106,7 @@ const parseDSL = text => {
       continue
     }
     // Anything else is a domain spec (glob, explicit domain, or scope keyword)
-    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(upper) ? upper : line)
+    specs.push(['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY', 'SITE'].includes(upper) ? upper : line)
   }
 
   return {

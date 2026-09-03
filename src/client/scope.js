@@ -91,7 +91,16 @@ const resolveRosters = async rosterRefs => {
 }
 
 // Effective specs: DSL specs plus any domains contributed by ROSTER lines.
-const effectiveSpecs = async (specs, rosterRefs) =>
-  rosterRefs.length ? [...specs, ...await resolveRosters(rosterRefs)] : specs
+//
+// SITE expands to the domain the page is being served from. A page shipped to
+// every site in the farm — a plugin's utility page — cannot name its own home,
+// and leaving the scope empty means the whole farm in the report modes. SITE
+// is how such a page says "search here" and means it wherever it lands.
+const effectiveSpecs = async (specs, rosterRefs) => {
+  const here = (typeof window !== 'undefined' && window.location)
+    ? window.location.hostname : null
+  const expanded = specs.map(s => (s.toUpperCase() === 'SITE' && here ? here : s))
+  return rosterRefs.length ? [...expanded, ...await resolveRosters(rosterRefs)] : expanded
+}
 
 export { slugify, resolveDomains, resolveRosters, effectiveSpecs, SITE_LINE, ROSTER_LINE, REFS_LINE }

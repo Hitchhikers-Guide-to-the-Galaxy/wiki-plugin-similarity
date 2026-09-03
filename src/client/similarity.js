@@ -79,6 +79,13 @@ export const emit = (div, item) => {
         <div class="sim-status">Loading indexed domains (${label})…</div>
         <div class="sim-list"></div>
       </div>`)
+  } else if (mode === 'status') {
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}">
+        <div class="sim-status">Reading the state of the index…</div>
+        <div class="sim-list"></div>
+      </div>`)
   } else if (mode === 'similar') {
     const label = specs.length ? specs.join(', ') : 'current domain'
     div.html(`
@@ -165,7 +172,64 @@ export const bind = (div, item) => {
 
   const cacheNote = ts => ts ? ` · cached ${cacheAge(ts)}` : ''
 
-  if (mode === 'list') {
+  if (mode === 'status') {
+    // The state of the index behind every other item on the page: which model,
+    // how much is indexed, when it was last built, and — the one that decides
+    // whether any of this works — whether a query can be turned into a vector
+    // at all. A search page that cannot say this leaves the reader guessing
+    // why an answer looks thin.
+    const listDiv = div.find('.sim-list')[0]
+
+    const ago = iso => {
+      if (!iso) return 'unknown'
+      const days = (Date.now() - new Date(iso)) / 86400000
+      if (days < 1) return 'today'
+      if (days < 2) return 'yesterday'
+      return `${Math.floor(days)} days ago`
+    }
+    const day = iso => (iso ? new Date(iso).toISOString().slice(0, 10) : '—')
+
+    ;(async () => {
+      try {
+        const [health, domains] = await Promise.all([
+          fetch(`${origin}/system/similarity-health.json`).then(r => r.json()),
+          fetch(`${origin}/system/indexed-domains.json`).then(r => r.ok ? r.json() : []),
+        ])
+        const emb   = health.embedder || {}
+        const built = domains.map(d => d.built).filter(Boolean).sort()
+        const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
+
+        // "Up" means a query can be embedded right now. A breaker that has
+        // tripped reads as down, because for the next few minutes it is.
+        const down  = emb.state === 'down'
+        const upLine = down
+          ? `<strong>Semantic search is down</strong> — the embedder is unavailable, so searches will answer by keyword instead.`
+          : `Semantic search is <strong>up</strong>.`
+        const via = emb.via === 'url'
+          ? `delegated to <code>${emb.url}</code> (from ${emb.source || 'config'})`
+          : emb.via === 'semindex' ? 'in this process, via the SemIndex plugin'
+          : 'in this process, in a supervised child'
+
+        status.style.display = 'none'
+        listDiv.innerHTML = `<h3>The Index Behind These Answers</h3>
+          <p>${upLine}</p>
+          <table>
+            <tr><th>Model</th><td>${health.model || '—'} · ${health.dim || '—'} dimensions</td></tr>
+            <tr><th>Embedder</th><td>${via}${down ? ' — <strong>currently down</strong>' : ''}</td></tr>
+            <tr><th>Indexed</th><td>${domains.length.toLocaleString()} domains · ${pages.toLocaleString()} pages</td></tr>
+            <tr><th>Newest page vectors</th><td>${day(built[built.length - 1])} (${ago(built[built.length - 1])})</td></tr>
+            <tr><th>Oldest page vectors</th><td>${day(built[0])} (${ago(built[0])})</td></tr>
+            <tr><th>Plugin</th><td>wiki-plugin-similarity ${health.version || '—'}</td></tr>
+          </table>
+          <p class="sim-count">A domain's vectors are only rebuilt when its pages change, so an old
+             date means a quiet site, not a broken one. Pages saved since the last build are findable
+             by keyword but not yet by meaning.</p>`
+      } catch (e) {
+        status.textContent = `Index state unavailable: ${e.message}`
+      }
+    })()
+
+  } else if (mode === 'list') {
     const listDiv = div.find('.sim-list')[0]
 
     const renderList = (domains, ts) => {

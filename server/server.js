@@ -7,7 +7,8 @@
 //
 // Routes:
 //   GET  /system/indexed-domains.json?pattern=glob1,glob2
-//     [{domain, page_count}] for domains with a semantic-vectors.json.
+//     [{domain, page_count, built}] for domains with a semantic-vectors.json;
+//     built is when those vectors were last written (ISO, since 0.16.0).
 //   GET  /system/semantic-vectors.json[?domain=]
 //     Serves {farm}/{domain}/status/semantic-vectors.json.
 //   GET|POST /system/embed.json  ?text=… | {text}
@@ -312,13 +313,18 @@ const startServer = ({ argv, app }) => {
     let results = listDomains(farms, patterns, restricted, 'status/semantic-vectors.json')
       .filter(({ domain }) => visible(req, domain))
       .map(({ farm, domain }) => {
+        const file = path.join(farm, domain, 'status', 'semantic-vectors.json')
         let pageCount = null
+        let built = null
         try {
-          const pages = JSON.parse(fs.readFileSync(
-            path.join(farm, domain, 'status', 'semantic-vectors.json'), 'utf8'))
+          // When the vectors were last written. One stat on top of a read we
+          // are already paying for, and it is what lets a reader see whether
+          // the index behind an answer is current or months old.
+          built = new Date(fs.statSync(file).mtimeMs).toISOString()
+          const pages = JSON.parse(fs.readFileSync(file, 'utf8'))
           pageCount = Array.isArray(pages) ? pages.length : null
         } catch { /* ignore */ }
-        return { domain, page_count: pageCount }
+        return { domain, page_count: pageCount, built }
       })
     if (limit) results = results.slice(0, limit)
     res.json(results)
