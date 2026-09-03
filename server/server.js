@@ -17,7 +17,11 @@
 //     Set WIKI_EMBED_URL to proxy to an external embedder instead.
 //   GET  /system/similarity-health.json
 //     Embedder supervisor state (child-process | semindex | url, breaker,
-//     recent crashes) — 200 always; diagnosable from outside.
+//     recent crashes) — 200 always; diagnosable from outside. Since 0.14.0 a
+//     url embedder also reports the source it came from (env | file), and
+//     localEmbedderAvailable says whether this box could embed unaided — the
+//     local path is never exercised while a proxy is set, so nothing else
+//     answers that question from outside.
 //   POST /system/search-report.json  {query, domains, limit, threshold, live,
 //                                     vector?, seed?, text?, excludePage?}
 //     Ranked, stub-filtered, fork-bundled semantic report (page JSON).
@@ -82,7 +86,30 @@ const PLUGIN_VERSION = (() => {
 })()
 
 // Optional external embedder (proxy) — unset means embed in-process.
-const EMBED_URL   = process.env.WIKI_EMBED_URL || null
+//
+// Validated since 0.14.0. The public farm was set to the literal string
+// "disabled", which is truthy, so every query was POSTed to a URL that does
+// not parse and semantic search was dead farm-wide. A value that is not an
+// http(s) URL now means what whoever typed it meant: no proxy.
+const httpUrlOrNull = raw => {
+  if (!raw) return null
+  try {
+    const u = new URL(raw)
+    if (u.protocol === 'http:' || u.protocol === 'https:') return raw
+  } catch { /* not a URL at all */ }
+  return null
+}
+
+const ENV_EMBED_URL = (() => {
+  const raw = process.env.WIKI_EMBED_URL
+  if (!raw) return null
+  const ok = httpUrlOrNull(raw)
+  if (!ok) {
+    console.log('[wiki-plugin-similarity] WIKI_EMBED_URL is not an http(s) URL ' +
+      `(${JSON.stringify(raw)}) — ignoring it and embedding in-process`)
+  }
+  return ok
+})()
 // Farm indexer for BUILD requests (HomeLab FastAPI, or unset on the public farm).
 const INDEXER_URL = process.env.WIKI_INDEXER_URL || null
 // Optional additional farm roots, colon-separated absolute paths.
@@ -96,13 +123,18 @@ const TRUSTED_NETS = parseNets()
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
+// Pick the agent by protocol. Before 0.14.0 both helpers were http-only with
+// port 80 hard-defaulted, so an https:// embed URL silently failed — the
+// delegation path could never have worked across the public internet.
+const agentFor = u => (u.protocol === 'https:' ? https : http)
+
 const postJson = (url, body) =>
   new Promise((resolve, reject) => {
     const payload = JSON.stringify(body)
     const u = new URL(url)
     const opts = {
       hostname: u.hostname,
-      port:     u.port || 80,
+      port:     u.port || (u.protocol === 'https:' ? 443 : 80),
       path:     u.pathname + u.search,
       method:   'POST',
       headers:  {
@@ -110,7 +142,7 @@ const postJson = (url, body) =>
         'Content-Length': Buffer.byteLength(payload),
       },
     }
-    const req = http.request(opts, res => {
+    const req = agentFor(u).request(opts, res => {
       let data = ''
       res.on('data', chunk => { data += chunk })
       res.on('end', () => {
@@ -126,7 +158,7 @@ const postJson = (url, body) =>
 const getJson = url =>
   new Promise((resolve, reject) => {
     const u = new URL(url)
-    http.get(u, res => {
+    agentFor(u).get(u, res => {
       let data = ''
       res.on('data', chunk => { data += chunk })
       res.on('end', () => {
@@ -150,6 +182,45 @@ const readBody = req =>
   })
 
 
+// ── Embed URL from the farm root ──────────────────────────────────────────────
+// Where the environment is not ours to set — the public farm's stack belongs to
+// its host — the address may instead come from a file in the farm root:
+//
+//   {farmRoot}/similarity.json   { "embedUrl": "https://host/system/…" }
+//
+// Cached by mtime so a synced edit retargets the embedder with no restart, the
+// same discipline wiki-plugin-farm's keys.js uses for status/api-keys.json.
+// The file is never served over HTTP; writing it means write access to the farm.
+let cfgCache = null // { mtimeMs, embedUrl }
+
+const fileEmbedUrl = farmRoot => {
+  const file = path.join(farmRoot, 'similarity.json')
+  let stat
+  try { stat = fs.statSync(file) } catch { cfgCache = null; return null }
+  if (cfgCache && cfgCache.mtimeMs === stat.mtimeMs) return cfgCache.embedUrl
+  let embedUrl = null
+  try {
+    const cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
+    embedUrl = httpUrlOrNull(cfg.embedUrl)
+    if (cfg.embedUrl && !embedUrl) {
+      console.log(`caution: ${file}: embedUrl is not an http(s) URL — ignoring it`)
+    }
+  } catch (e) {
+    console.log(`caution: ${file}: ${e.message}`)
+  }
+  cfgCache = { mtimeMs: stat.mtimeMs, embedUrl }
+  return embedUrl
+}
+
+// Can this process turn text into a vector without leaving the box? Reported by
+// the health route even when a proxy is configured, because with a proxy set the
+// local path is never exercised and the logs stay silent about it — which is
+// exactly the question that was unanswerable on the public farm.
+const localEmbedderAvailable = () => {
+  if (embedder.viaSemindex) return true
+  try { require.resolve('@xenova/transformers'); return true } catch { return false }
+}
+
 // ── startServer — called by wiki-server/lib/plugins.js ────────────────────────
 
 setModelMeta(MODEL_META)
@@ -157,6 +228,10 @@ setModelMeta(MODEL_META)
 const startServer = ({ argv, app }) => {
   // Farm root: argv.status = {farm}/{thisDomain}/status  →  go up two levels
   const farmRoot = path.dirname(path.dirname(argv.status))
+
+  // env wins; then the farm-root file; then embed in-process.
+  const embedUrl       = () => ENV_EMBED_URL || fileEmbedUrl(farmRoot)
+  const embedUrlSource = () => (ENV_EMBED_URL ? 'env' : (fileEmbedUrl(farmRoot) ? 'file' : null))
   // primary farm is 'local'; extra farms (Nextcloud mirror) are 'public'.
   // The galaxy tree (off-farm federation sites, written by the galaxy
   // indexer) joins as kind 'galaxy' when present — never matched by '*',
@@ -188,10 +263,11 @@ const startServer = ({ argv, app }) => {
     `| trusted nets: ${TRUSTED_NETS.join(' ')}`)
 
   // Warm the embedding model in the background so the first query is fast.
-  if (!EMBED_URL) embedder.warm()
+  if (!embedUrl()) embedder.warm()
 
   async function embedText(text) {
-    if (EMBED_URL) return (await postJson(EMBED_URL, { text })).vector
+    const url = embedUrl()
+    if (url) return (await postJson(url, { text })).vector
     return embedder.embed(text)
   }
 
@@ -319,7 +395,11 @@ const startServer = ({ argv, app }) => {
       plugin: 'wiki-plugin-similarity',
       version: PLUGIN_VERSION,
       ...MODEL_META,
-      embedder: EMBED_URL ? { via: 'url', url: EMBED_URL } : embedder.status(),
+      embedder: (() => {
+        const url = embedUrl()
+        return url ? { via: 'url', url, source: embedUrlSource() } : embedder.status()
+      })(),
+      localEmbedderAvailable: localEmbedderAvailable(),
       galaxy: fs.existsSync(galaxyDir)
         ? { root: galaxyDir, cache: galaxyCacheStats() }
         : null,
@@ -636,4 +716,6 @@ const startServer = ({ argv, app }) => {
   console.log('[wiki-plugin-similarity] routes registered')
 }
 
-module.exports = { startServer }
+// httpUrlOrNull and fileEmbedUrl are exported for the tests: they decide whether
+// this farm embeds for itself or delegates, which is worth pinning down.
+module.exports = { startServer, httpUrlOrNull, fileEmbedUrl, localEmbedderAvailable }
