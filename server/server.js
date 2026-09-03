@@ -267,8 +267,18 @@ const startServer = ({ argv, app }) => {
 
   async function embedText(text) {
     const url = embedUrl()
-    if (url) return (await postJson(url, { text })).vector
-    return embedder.embed(text)
+    if (!url) return embedder.embed(text)
+    try {
+      return (await postJson(url, { text })).vector
+    } catch (e) {
+      // A proxy we cannot reach is the same outage as a local embedder that
+      // will not start, and callers must be able to tell "no vector to be had"
+      // from "bad query". Without this the failure arrived as a bare 500 and
+      // the client could not know to fall back to keyword search.
+      const err = new Error(`remote embedder at ${url}: ${e.message}`)
+      err.code = 'EMBEDDER_DOWN'
+      throw err
+    }
   }
 
   const cors = res => {
