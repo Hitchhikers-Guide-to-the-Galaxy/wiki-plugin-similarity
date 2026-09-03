@@ -73,8 +73,13 @@
     },
     {
       "type": "markdown",
+      "id": "c72e1a4f08b5d693",
+      "text": "0.15.0 makes a dead embedder degrade honestly. The embedder and the keyword index share nothing, so one can be down while the other is fine \u2014 but a report that could not embed its query used to leave a bare status code and no results. It now says semantic search is unavailable, gives the reason, and answers the same query by keyword instead. The result page is titled \u201cKeyword Search\u201d by the server, so the reader can see which tier answered."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.14.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.15.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",

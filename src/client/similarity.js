@@ -337,6 +337,25 @@ export const bind = (div, item) => {
       }
     })()
 
+    // The embedder and the keyword index share nothing: one can be down while
+    // the other is perfectly healthy. A report that cannot embed its query
+    // should say so and answer with words, not leave an error and no results.
+    // 502/503 are what the server sends when embedding is unavailable — a
+    // missing local embedder, or the circuit breaker open after crashes.
+    const EMBEDDER_DOWN = new Set([502, 503])
+
+    const keywordInstead = async (query, eff) => {
+      const pattern = encodeURIComponent((eff.length ? eff : ['*']).join(','))
+      const farmsParam = farms.length ? `&farms=${encodeURIComponent(farms.join(','))}` : ''
+      const res = await fetch(
+        `${origin}/system/farm-search.json?q=${encodeURIComponent(query)}&pattern=${pattern}&limit=${limit}${farmsParam}`)
+      if (!res.ok) throw new Error(`keyword search also failed: ${res.status}`)
+      const page = await res.json()
+      // The server titles this page "… Keyword Search", so the reader can see
+      // which tier answered without being told twice.
+      window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
+    }
+
     const doReport = async () => {
       const query = input.value.trim()
       if (!query) return
@@ -354,6 +373,14 @@ export const bind = (div, item) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
+        if (EMBEDDER_DOWN.has(res.status)) {
+          const body = await res.json().catch(() => ({}))
+          const why = (body.error || `status ${res.status}`).replace(/^embedding unavailable: /, '')
+          status.textContent = 'Semantic search unavailable — searching by keyword instead…'
+          await keywordInstead(query, eff)
+          status.textContent = `Semantic search unavailable (${why}) — these are keyword matches, ranked by word not meaning.`
+          return
+        }
         if (!res.ok) throw new Error(`search-report failed: ${res.status}`)
         const page = await res.json()
         const pageObj = window.wiki.newPage(page)
