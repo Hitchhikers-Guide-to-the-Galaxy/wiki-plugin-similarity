@@ -191,20 +191,32 @@ export const bind = (div, item) => {
 
     ;(async () => {
       try {
-        const [health, domains] = await Promise.all([
+        // Whether search works is answered by trying it, not by reading a
+        // field. A delegated embedder reports no supervisor state at all, so
+        // a proxy pointed at a dead address looked healthy here — the exact
+        // silent failure this panel exists to prevent.
+        const probeEmbedder = () =>
+          fetch(`${origin}/system/embed.json?text=ping`)
+            .then(async r => r.ok
+              ? { ok: true }
+              : { ok: false, detail: ((await r.json().catch(() => ({}))).error || `status ${r.status}`)
+                  .replace(/^embedding unavailable: /, '') })
+            .catch(e => ({ ok: false, detail: e.message }))
+
+        const [health, domains, probe] = await Promise.all([
           fetch(`${origin}/system/similarity-health.json`).then(r => r.json()),
           fetch(`${origin}/system/indexed-domains.json`).then(r => r.ok ? r.json() : []),
+          probeEmbedder(),
         ])
         const emb   = health.embedder || {}
         const built = domains.map(d => d.built).filter(Boolean).sort()
         const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
 
-        // "Up" means a query can be embedded right now. A breaker that has
-        // tripped reads as down, because for the next few minutes it is.
-        const down  = emb.state === 'down'
+        // "Up" means a query can be embedded right now — proven a moment ago.
+        const down  = !probe.ok
         const upLine = down
-          ? `<strong>Semantic search is down</strong> — the embedder is unavailable, so searches will answer by keyword instead.`
-          : `Semantic search is <strong>up</strong>.`
+          ? `<strong>Semantic search is down</strong> — a query cannot be turned into a vector right now (${probe.detail}), so searches on this page will answer by keyword instead.`
+          : `Semantic search is <strong>up</strong> — checked just now by embedding a word.`
         const via = emb.via === 'url'
           ? `delegated to <code>${emb.url}</code> (from ${emb.source || 'config'})`
           : emb.via === 'semindex' ? 'in this process, via the SemIndex plugin'
