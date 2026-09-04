@@ -292,6 +292,9 @@ export const bind = (div, item) => {
   } else if (mode === 'algorithm') {
     // The item IS the reader's search algorithm: show what the ranker will
     // read from it, and what the browser has learned so far (algorithm.js).
+    // Rendered a tick later, like every other mode: a synchronous render
+    // here was wiped by a second emit wiki-client runs on the item at load.
+    setTimeout(() => {
     const listDiv = div.find('.sim-list')[0]
     try {
       const a = parseAlgorithm(item.text || '')
@@ -323,6 +326,7 @@ export const bind = (div, item) => {
     } catch (e) {
       status.textContent = `Algorithm unreadable: ${e.message}`
     }
+    }, 0)
 
   } else if (mode === 'list') {
     const listDiv = div.find('.sim-list')[0]
