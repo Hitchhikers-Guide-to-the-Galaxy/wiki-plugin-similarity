@@ -71,7 +71,9 @@ const https  = require('node:https')
 
 const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm-lib')
 const embedder     = require('./embedder')
-const { buildReport } = require('./search-report')
+const { buildReport, buildReportFlat, seedVector } = require('./search-report')
+const { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, noteWanted } = require('./site-index')
+const { rankSites, batches } = require('./site-rank')
 const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
@@ -112,6 +114,9 @@ const ENV_EMBED_URL = (() => {
   }
   return ok
 })()
+// Peer farms, comma-separated https origins, in preference order (env wins
+// over the similarity.json file; see fileConfig).
+const ENV_PEERS = (process.env.WIKI_PEERS || '').split(',').map(httpUrlOrNull).filter(Boolean)
 // Farm indexer for BUILD requests (HomeLab FastAPI, or unset on the public farm).
 const INDEXER_URL = process.env.WIKI_INDEXER_URL || null
 // Optional additional farm roots, colon-separated absolute paths.
@@ -193,26 +198,33 @@ const readBody = req =>
 // Cached by mtime so a synced edit retargets the embedder with no restart, the
 // same discipline wiki-plugin-farm's keys.js uses for status/api-keys.json.
 // The file is never served over HTTP; writing it means write access to the farm.
-let cfgCache = null // { mtimeMs, embedUrl }
+let cfgCache = null // { mtimeMs, embedUrl, peers }
 
-const fileEmbedUrl = farmRoot => {
+// Since 0.19.0 the same file also names the farm's PEERS, in preference
+// order — the nearest sibling farms whose indexes this one leans on when it
+// has no galaxy tree of its own (the cascade: own index, then peers, then
+// the pan-galactic tree):  { "peers": ["https://hitchhiker.fm", …] }
+const fileConfig = farmRoot => {
   const file = path.join(farmRoot, 'similarity.json')
   let stat
-  try { stat = fs.statSync(file) } catch { cfgCache = null; return null }
-  if (cfgCache && cfgCache.mtimeMs === stat.mtimeMs) return cfgCache.embedUrl
-  let embedUrl = null
+  try { stat = fs.statSync(file) } catch { cfgCache = null; return { embedUrl: null, peers: [] } }
+  if (cfgCache && cfgCache.mtimeMs === stat.mtimeMs) return cfgCache
+  let embedUrl = null, peers = []
   try {
     const cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
     embedUrl = httpUrlOrNull(cfg.embedUrl)
     if (cfg.embedUrl && !embedUrl) {
       console.log(`caution: ${file}: embedUrl is not an http(s) URL — ignoring it`)
     }
+    peers = (Array.isArray(cfg.peers) ? cfg.peers : []).map(httpUrlOrNull).filter(Boolean)
   } catch (e) {
     console.log(`caution: ${file}: ${e.message}`)
   }
-  cfgCache = { mtimeMs: stat.mtimeMs, embedUrl }
-  return embedUrl
+  cfgCache = { mtimeMs: stat.mtimeMs, embedUrl, peers }
+  return cfgCache
 }
+const fileEmbedUrl = farmRoot => fileConfig(farmRoot).embedUrl
+const filePeers = farmRoot => ENV_PEERS.length ? ENV_PEERS : fileConfig(farmRoot).peers
 
 // Can this process turn text into a vector without leaving the box? Reported by
 // the health route even when a proxy is configured, because with a proxy set the
@@ -248,6 +260,13 @@ const startServer = ({ argv, app }) => {
   const ctx = { farms, restricted, embed: embedText }
   // Pay the vector parse once, now, off the request path — and only once per
   // process however many sites' startServer calls arrive (vector-store.js).
+  // The Site Index: this host's own galaxy tree carries one; a farm without
+  // one fetches its nearest peer's copy (site-index.js), now and every TTL.
+  const peers = () => filePeers(farmRoot)
+  const refreshSiteIndex = () => refreshFromPeers(peers(), galaxyDir).catch(() => null)
+  refreshSiteIndex()
+  setInterval(refreshSiteIndex, 3600 * 1000).unref()
+
   warmUp(farms).then(w => {
     if (w.total) console.log(`[wiki-plugin-similarity] vector store warm: ` +
       `${w.done}/${w.total} files in ${w.ms} ms${w.capped ? ' (cap reached)' : ''}`)
@@ -302,7 +321,8 @@ const startServer = ({ argv, app }) => {
                        '/system/build-index.json',
                        '/system/galaxy-search.json', '/system/peer-search.json',
                        '/system/peer-hello.json', '/system/similarity-health.json',
-                       '/system/galaxy-registry.json']) {
+                       '/system/galaxy-registry.json',
+                       '/system/galaxy-sites.json', '/system/site-rank.json']) {
     app.options(route, (req, res) => { cors(res); res.sendStatus(204) })
   }
 
@@ -426,6 +446,11 @@ const startServer = ({ argv, app }) => {
       galaxy: galaxyDir && fs.existsSync(galaxyDir)
         ? { root: galaxyDir }
         : null,
+      // The Site Index (0.19.0): one vector per federation site, from this
+      // host's galaxy tree or fetched from a peer; and the peers this farm
+      // leans on, in order.
+      siteIndex: siteIndexStats(galaxyDir),
+      peers: peers(),
       // The vector store: sites and pages resident, heap bytes against the
       // cap, how many files were parsed vs restored from the disk cache, and
       // the warm-up state — `warm.state` is 'warm' once every file in every
@@ -453,7 +478,10 @@ const startServer = ({ argv, app }) => {
       // locally AND forwarded to peers, who resolve the same plain name against
       // their own records — an endpoint that accepted the field but only
       // honoured it remotely would be a trap.
-      let domains = body.domains || ['*']
+      // A string is a one-element scope: "GALAXY" as a bare string used to
+      // die inside buildReport with `.map is not a function`.
+      let domains = Array.isArray(body.domains) ? body.domains
+        : body.domains ? [String(body.domains)] : ['*']
       if (body.author) {
         const res_ = resolveAuthor(farms, String(body.author).slice(0, 100))
         if (res_.ambiguous) {
@@ -476,6 +504,38 @@ const startServer = ({ argv, app }) => {
         }
       }
 
+      // flat: the same report as data — a client merging batches of an
+      // incremental federated search renders the page itself.
+      if (body.flat) {
+        const flat = await buildReportFlat(
+          body.query, domains, body.limit || 10, ctxFor(req),
+          body.threshold ?? null, seedOptsFrom(body))
+        // The cascade: explicit domains this farm holds no vectors for are
+        // asked of the nearest peer that may — the same body, only the
+        // missing domains — and its results merge in, marked by source.
+        const explicit = domains.filter(d => !['*', 'PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(d.toUpperCase()) && !/[*?]/.test(d))
+        const held = new Set(listDomains(farms, explicit, restricted, 'status/semantic-vectors.json').map(d => d.domain))
+        const missing = explicit.filter(d => !held.has(d))
+        const peerList = peers()
+        if (missing.length && peerList.length && !body.noPeers) {
+          const peerHost = new URL(peerList[0]).host
+          try {
+            const ans = await postToPeer(peerHost, '/system/search-report.json',
+              { ...body, domains: missing, noPeers: true, farms: undefined }, 20_000)
+            if (ans.status === 200 && Array.isArray(ans.body.results)) {
+              for (const r of ans.body.results) flat.results.push({ ...r, via: peerHost })
+              flat.results.sort((a, b) => b.score - a.score)
+              flat.results = flat.results.slice(0, body.limit || 10)
+              flat.stats.domains += (ans.body.stats && ans.body.stats.domains) || 0
+              flat.stats.pages += (ans.body.stats && ans.body.stats.pages) || 0
+              flat.stats.peer = peerHost
+            }
+          } catch (e) {
+            flat.stats.peerError = `${peerHost}: ${e.message}`
+          }
+        }
+        return res.json(flat)
+      }
       const page = await buildReport(
         body.query, domains, body.limit || 10, ctxFor(req),
         body.threshold ?? null, !!body.live, seedOptsFrom(body))
@@ -497,6 +557,75 @@ const startServer = ({ argv, app }) => {
     }
   })
 
+  // ── GET /system/galaxy-sites.json — the Site Index, as this host has it ──
+  // Served raw from the galaxy tree (or the peer copy) with Last-Modified, so
+  // a peer farm's conditional GET costs a 304 when nothing changed.
+  app.get('/system/galaxy-sites.json', (req, res) => {
+    cors(res)
+    const file = indexFile(galaxyDir)
+    if (!file) return res.status(404).json({ error: 'no site index on this host', peers: peers() })
+    let stat
+    try { stat = fs.statSync(file) } catch { return res.status(404).json({ error: 'site index unreadable' }) }
+    const since = req.headers['if-modified-since']
+    if (since && new Date(since).getTime() >= Math.floor(stat.mtimeMs / 1000) * 1000) {
+      return res.status(304).end()
+    }
+    res.setHeader('Last-Modified', stat.mtime.toUTCString())
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    res.setHeader('Content-Type', 'application/json')
+    fs.createReadStream(file).pipe(res)
+  })
+
+  // ── POST /system/site-rank.json — which sites to search first ─────────────
+  // {query, vector?|seed?|text?, domains?, prefer: {roster[], neighborhood[],
+  //  followed}, algorithm: {weights, always[], never[], learned}, batch, limit}
+  // → {count, sites: [{domain, kind, tier, pages, method, source, indexedAt,
+  //    centroid, score, reason, preferred}], batches: [[domain…]…],
+  //    unindexed: [domains ranked highly but carrying no page vectors]}
+  // Every site in the Site Index plus this farm's own, ordered for this
+  // query (site-rank.js). A scope in `domains` narrows the ranked set the
+  // way it narrows a report: GALAXY keeps off-farm sites, '*' this farm's,
+  // an explicit domain or glob itself — the default is everything.
+  app.post('/system/site-rank.json', async (req, res) => {
+    cors(res)
+    try {
+      const body = await readBody(req)
+      if (!body.query && !body.vector && !body.seed && !body.text)
+        return res.status(400).json({ error: 'query, vector, seed or text required' })
+      const c = ctxFor(req)
+      const qvec = await seedVector(seedOptsFrom(body), body.query || '', farms, embedText)
+      const index = loadSiteIndex(galaxyDir)
+      const local = localSites(farms, restricted, c.exclude)
+      let ranked = rankSites(qvec, index, local, body.prefer || {}, body.algorithm || {})
+      const specs = (Array.isArray(body.domains) ? body.domains : body.domains ? [String(body.domains)] : [])
+        .map(d => ['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(d.toUpperCase()) ? d.toUpperCase() : d)
+      if (specs.length && !specs.every(sp => sp === '*' || sp === 'GALAXY')) {
+        ranked = ranked.filter(r => matchesAny(r.domain, r.kind === 'own' ? 'local' : r.kind, specs, restricted))
+      } else if (specs.length === 1 && specs[0] === '*') {
+        ranked = ranked.filter(r => r.kind === 'own')
+      } else if (specs.length === 1 && specs[0] === 'GALAXY') {
+        ranked = ranked.filter(r => r.kind !== 'own')
+      }
+      if (c.exclude) ranked = ranked.filter(r => !c.exclude.has(r.domain))
+      const size = Math.max(5, Math.min(500, parseInt(body.batch) || 50))
+      const limit = parseInt(body.limit) || ranked.length
+      const sites = ranked.slice(0, limit)
+      // Demand feeds supply: unindexed sites in the top fifty are wanted.
+      noteWanted(sites.slice(0, 50).filter(r => r.method === 'sitemap').map(r => r.domain))
+      res.json({
+        query: body.query || null, count: sites.length,
+        siteIndex: siteIndexStats(galaxyDir),
+        sites,
+        batches: batches(sites, size),
+        unindexed: sites.filter(r => r.method === 'sitemap').slice(0, 20).map(r => r.domain),
+      })
+    } catch (e) {
+      console.error('[wiki-plugin-similarity] site-rank error:', e.message)
+      res.status(e.code === 'EMBEDDER_DOWN' ? 503 : 500)
+        .json({ error: `site-rank failed: ${e.message}` })
+    }
+  })
+
   // ── POST /system/site-report.json ──────────────────────────────────────────
   // {query, domains, limit, format} → which SITE should this page go on?
   // Per-domain aggregation of the page-vector scan (site-report.js). Farm-local
@@ -506,8 +635,10 @@ const startServer = ({ argv, app }) => {
     try {
       const body = await readBody(req)
       if (!body.query) return res.status(400).json({ error: 'query required' })
+      const siteDomains = Array.isArray(body.domains) ? body.domains
+        : body.domains ? [String(body.domains)] : ['*']
       res.json(await buildSiteReport(
-        body.query, body.domains || ['*'], body.limit || 10, ctxFor(req),
+        body.query, siteDomains, body.limit || 10, ctxFor(req),
         body.format || null, seedOptsFrom(body)))
     } catch (e) {
       console.error('[wiki-plugin-similarity] site-report error:', e.message)

@@ -176,6 +176,29 @@ const loadEntry = file => {
   return entry
 }
 
+// A site's centroid: the mean of its unit page vectors, re-normalised —
+// the site summary the Site Index carries for off-farm sites, computed here
+// for the sites this farm holds itself. Cached on the entry.
+const siteCentroid = file => {
+  const e = loadEntry(file)
+  if (!e || !e.n) return null
+  if (e.centroid) return e.centroid
+  const { n, dim, matrix } = e
+  const sum = new Float64Array(dim)
+  for (let i = 0; i < n; i++) {
+    const row = matrix.subarray(i * dim, (i + 1) * dim)
+    let norm = 0
+    for (let j = 0; j < dim; j++) norm += row[j] * row[j]
+    norm = Math.sqrt(norm) || 1
+    for (let j = 0; j < dim; j++) sum[j] += row[j] / norm
+  }
+  let norm = 0
+  for (let j = 0; j < dim; j++) norm += sum[j] * sum[j]
+  norm = Math.sqrt(norm) || 1
+  e.centroid = Float32Array.from(sum, x => x / norm)
+  return e.centroid
+}
+
 // The compatibility surface — an array of pages, each with a `.vector` view.
 const loadVectorsFile = file => {
   const entry = loadEntry(file)
@@ -242,6 +265,6 @@ const resetStore = () => {
 }
 
 module.exports = {
-  loadEntry, loadVectorsFile, loadVectorsCached, warmUp, storeStats, resetStore,
-  buildEntry, storeDir, CACHE_BYTES,
+  loadEntry, loadVectorsFile, loadVectorsCached, siteCentroid, warmUp, storeStats,
+  resetStore, buildEntry, storeDir, CACHE_BYTES,
 }

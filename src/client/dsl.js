@@ -7,9 +7,12 @@ const SIMILAR_THRESHOLDS = { high: 0.78, medium: 0.68, low: 0.58 }
 const DEFAULT_THRESHOLD  = SIMILAR_THRESHOLDS.medium
 const DEFAULT_LIMIT      = 10
 
-// parseDSL returns { mode, specs, threshold, limit }
+// parseDSL returns { mode, specs, threshold, limit, ... }
 //
-// mode: 'status' if STATUS is present — the state of the index behind the answers;
+// mode: 'algorithm' if ALGORITHM is the first meaningful line — the item IS
+//        the reader's search algorithm (weights and rules, see algorithm.js);
+//        elsewhere in an item, ALGORITHM site/slug names the page to read one from;
+//       'status' if STATUS is present — the state of the index behind the answers;
 //       'similar' if SIMILAR: is the first meaningful line (ambient auto-run),
 //        'search'  otherwise (interactive search form).
 //
@@ -29,6 +32,8 @@ const parseDSL = text => {
   let force     = false     // BUILD mode: re-embed even when index is fresh
   let ghostUrl  = null      // GHOST mode: page-json URL to open as a ghost page
   let label     = null      // BUTTON: custom button caption (GHOST / BUILD modes)
+  let batch     = null      // BATCH n: search sites n at a time, widening (0 = off)
+  let algorithm = null      // ALGORITHM site/slug or [[Page]]: the reader's Search Algorithm page
 
   // Match a keyword at the start of a line (case-insensitive), requiring it to
   // be followed by end-of-string, whitespace, or colon — not by more word chars.
@@ -72,6 +77,17 @@ const parseDSL = text => {
       continue
     }
     if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
+    if (isCmd(upper, 'BATCH')) {
+      const b = val(line, 'BATCH').toLowerCase()
+      batch = (b === 'off' || b === 'no' || b === '0') ? 0 : (parseInt(b) || 50)
+      continue
+    }
+    if (isCmd(upper, 'ALGORITHM')) {
+      const ref = val(line, 'ALGORITHM').replace(/^\[\[|\]\]$/g, '').trim()
+      algorithm = ref || 'search-algorithm'
+      if (mode === 'search' && !specs.length) mode = 'algorithm'
+      continue
+    }
     if (isCmd(upper, 'ROSTER')) {
       const ref = val(line, 'ROSTER')
       if (ref) rosterRefs.push(ref)
@@ -121,6 +137,8 @@ const parseDSL = text => {
     force,
     ghostUrl,
     label,
+    batch,
+    algorithm,
     thresholdSet: threshold !== null,  // explicit THRESHOLD/SIMILAR in the DSL
   }
 }

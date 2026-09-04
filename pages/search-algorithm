@@ -1,0 +1,147 @@
+{
+ "title": "Search Algorithm",
+ "story": [
+  {
+   "type": "markdown",
+   "id": "03d6555a7c009bfa",
+   "text": "Your search algorithm, as a page. Federated search ranks thousands of sites before it reads any of them, and this page is where that ranking is yours to shape: the sites you like, the sites you visit, and the weights and rules the ranker reads. Fork it and it is yours. An agent may edit it on your behalf, and the journal shows who changed what."
+  },
+  {
+   "type": "markdown",
+   "id": "5eacb163e8edc897",
+   "text": "## Sites I like"
+  },
+  {
+   "type": "roster",
+   "id": "39c4dcb073078564",
+   "text": "Sites I like\nward.bay.wiki.org\nfed.wiki"
+  },
+  {
+   "type": "markdown",
+   "id": "543b451e2b512b33",
+   "text": "Every bare site line above is lifted into the first batch of any search that reads this page. Add a line to like a site; delete a line to stop."
+  },
+  {
+   "type": "markdown",
+   "id": "7c2ac5fe2fe6d059",
+   "text": "## Sites I visit"
+  },
+  {
+   "type": "roster",
+   "id": "7132b1a6bfadc1f2",
+   "text": "Sites I visit"
+  },
+  {
+   "type": "markdown",
+   "id": "05cb193fb80b1198",
+   "text": "This roster is written by the learning loop, and only when you press **Remember** below. Your browser keeps a decayed score for every site that enters your neighbourhood, every site you open a page from, and every result you click. Nothing leaves your browser until you choose to remember it here, where you can read it and delete any line."
+  },
+  {
+   "type": "markdown",
+   "id": "27cf0d69c607e03a",
+   "text": "## The rules"
+  },
+  {
+   "type": "similarity",
+   "id": "8b616e19c4ff3973",
+   "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nBATCH 50"
+  },
+  {
+   "type": "markdown",
+   "id": "c7a6381efe13e028",
+   "text": "`WEIGHT` says how much each signal moves a site: **liked** for the roster above, **visited** for what the browser learned, **neighbourhood** for sites already in your lineup, **followed** for the federation's followed tier, **centroid** for how close a site is to the query, **fresh** for how recent the index holding it is. `ALWAYS site` pins a site into the first batch; `NEVER site` prunes it from every batch; `BATCH n` sets how many sites each request searches. Words the ranker does not know are ignored, so this vocabulary can grow."
+  },
+  {
+   "type": "markdown",
+   "id": "0274b6920603b6cc",
+   "text": "## Make this page your own"
+  },
+  {
+   "type": "markdown",
+   "id": "a748c7e1e6d0153d",
+   "text": "This page is served to every site by the similarity plugin. Fork it onto your own site and the fork wins: [[Search Tool]] reads `ALGORITHM [[Search Algorithm]]` from the site it runs on, so your site's copy shapes every search made there. Point an item at another algorithm with `ALGORITHM site/slug`."
+  },
+  {
+   "type": "markdown",
+   "id": "5e76fb4f221168f1",
+   "text": "# See\n\n- [[Search Tool]] \u2014 the searches that read this page\n- [https://search.fedwiki.club/view/incremental-federated-search Incremental Federated Search] \u2014 the design: why the ranking is a page in your own hand\n- [[About Similarity Plugin]]"
+  }
+ ],
+ "journal": [
+  {
+   "type": "create",
+   "item": {
+    "title": "Search Algorithm",
+    "story": [
+     {
+      "type": "markdown",
+      "id": "03d6555a7c009bfa",
+      "text": "Your search algorithm, as a page. Federated search ranks thousands of sites before it reads any of them, and this page is where that ranking is yours to shape: the sites you like, the sites you visit, and the weights and rules the ranker reads. Fork it and it is yours. An agent may edit it on your behalf, and the journal shows who changed what."
+     },
+     {
+      "type": "markdown",
+      "id": "5eacb163e8edc897",
+      "text": "## Sites I like"
+     },
+     {
+      "type": "roster",
+      "id": "39c4dcb073078564",
+      "text": "Sites I like\nward.bay.wiki.org\nfed.wiki"
+     },
+     {
+      "type": "markdown",
+      "id": "543b451e2b512b33",
+      "text": "Every bare site line above is lifted into the first batch of any search that reads this page. Add a line to like a site; delete a line to stop."
+     },
+     {
+      "type": "markdown",
+      "id": "7c2ac5fe2fe6d059",
+      "text": "## Sites I visit"
+     },
+     {
+      "type": "roster",
+      "id": "7132b1a6bfadc1f2",
+      "text": "Sites I visit"
+     },
+     {
+      "type": "markdown",
+      "id": "05cb193fb80b1198",
+      "text": "This roster is written by the learning loop, and only when you press **Remember** below. Your browser keeps a decayed score for every site that enters your neighbourhood, every site you open a page from, and every result you click. Nothing leaves your browser until you choose to remember it here, where you can read it and delete any line."
+     },
+     {
+      "type": "markdown",
+      "id": "27cf0d69c607e03a",
+      "text": "## The rules"
+     },
+     {
+      "type": "similarity",
+      "id": "8b616e19c4ff3973",
+      "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nBATCH 50"
+     },
+     {
+      "type": "markdown",
+      "id": "c7a6381efe13e028",
+      "text": "`WEIGHT` says how much each signal moves a site: **liked** for the roster above, **visited** for what the browser learned, **neighbourhood** for sites already in your lineup, **followed** for the federation's followed tier, **centroid** for how close a site is to the query, **fresh** for how recent the index holding it is. `ALWAYS site` pins a site into the first batch; `NEVER site` prunes it from every batch; `BATCH n` sets how many sites each request searches. Words the ranker does not know are ignored, so this vocabulary can grow."
+     },
+     {
+      "type": "markdown",
+      "id": "0274b6920603b6cc",
+      "text": "## Make this page your own"
+     },
+     {
+      "type": "markdown",
+      "id": "a748c7e1e6d0153d",
+      "text": "This page is served to every site by the similarity plugin. Fork it onto your own site and the fork wins: [[Search Tool]] reads `ALGORITHM [[Search Algorithm]]` from the site it runs on, so your site's copy shapes every search made there. Point an item at another algorithm with `ALGORITHM site/slug`."
+     },
+     {
+      "type": "markdown",
+      "id": "5e76fb4f221168f1",
+      "text": "# See\n\n- [[Search Tool]] \u2014 the searches that read this page\n- [https://search.fedwiki.club/view/incremental-federated-search Incremental Federated Search] \u2014 the design: why the ranking is a page in your own hand\n- [[About Similarity Plugin]]"
+     }
+    ]
+   },
+   "date": 1788507377908,
+   "provenance": "Authored by an AI agent \u2014 Claude Code (claude-fable-5-1) via the fedwiki-page skill, for wiki-plugin-similarity 0.19.0"
+  }
+ ]
+}

@@ -38,11 +38,14 @@
 //   GET  /system/farm-search.json?q=&pattern=&limit=
 //   GET  /system/build-index.json?domains=&force=
 
-import { parseDSL, DEFAULT_LIMIT } from './dsl.js'
+import { parseDSL, DEFAULT_LIMIT, isScope, isGlob } from './dsl.js'
 import { slugify, effectiveSpecs, resolveDomains } from './scope.js'
 import { loadVectors, getEmbedding, lookupPageVector, cosineScan, loadDomainEntries } from './vectors.js'
 import { resolveSubject, subjectNote } from './subject.js'
 import { readCache, writeCache, cacheAge } from './cache.js'
+import { runBatched } from './batch.js'
+import { loadAlgorithm, parseAlgorithm, learnedSignals } from './algorithm.js'
+import { credit, learned, forget, installAmbient, rememberInto } from './learn.js'
 import { STYLES, siteFlag } from './styles.js'
 import { install, takePending } from './searchdoor.js'
 
@@ -51,6 +54,21 @@ import { install, takePending } from './searchdoor.js'
 const simLink = (domain, slug, title, score) =>
   `<a class="sim-link" data-title="${title}" data-slug="${slug}" data-site="${domain}" href="#">` +
   `${siteFlag(domain, score)} ${title}</a>`
+
+// A merged batch result as a page, the same shape search-report renders.
+const flatPage = (query, merged) => {
+  const id = () => Math.random().toString(16).slice(2, 18).padEnd(16, '0')
+  const story = [{ type: 'markdown', id: id(),
+    text: `Federated search for **${query}** — ${merged.length} results, searched a batch at a time, nearest sites first.` }]
+  const titles = [...new Set(merged.map(r => r.title))]
+  if (titles.length) story.push({ type: 'markdown', id: id(), text: titles.map(t => `- [[${t}]]`).join('\n') })
+  story.push({ type: 'markdown', id: id(), text: '# Results' })
+  for (const r of merged) {
+    story.push({ type: 'reference', id: id(), site: r.site, slug: r.slug, title: r.title,
+      text: r.synopsis || `score ${r.score}` })
+  }
+  return { title: `${query} Federated Search`, story }
+}
 
 export const emit = (div, item) => {
   const { mode, specs, threshold, limit, force, ghostUrl, label } = parseDSL(item?.text || '')
@@ -78,6 +96,13 @@ export const emit = (div, item) => {
       <style>${STYLES}</style>
       <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="${specs.join(',') || ''}">
         <div class="sim-status">Loading indexed domains (${label})…</div>
+        <div class="sim-list"></div>
+      </div>`)
+  } else if (mode === 'algorithm') {
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="">
+        <div class="sim-status">Reading this search algorithm…</div>
         <div class="sim-list"></div>
       </div>`)
   } else if (mode === 'status') {
@@ -128,9 +153,10 @@ export const emit = (div, item) => {
 
 export const bind = (div, item) => {
   const { mode, specs, rosterRefs, farms, threshold, limit, live, subject: subjectFlag,
-    force, ghostUrl, thresholdSet } = parseDSL(item?.text || '')
+    force, ghostUrl, thresholdSet, batch, algorithm: algorithmRef } = parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
+  installAmbient()   // learn.js: neighbourhood + visits, once per page load
   // The subject depends on where in the lineup this page was opened, so
   // cached results from one host must never replay beside another.
   const subject = subjectFlag ? resolveSubject(div) : null
@@ -262,6 +288,41 @@ export const bind = (div, item) => {
         status.textContent = `Index state unavailable: ${e.message}`
       }
     })()
+
+  } else if (mode === 'algorithm') {
+    // The item IS the reader's search algorithm: show what the ranker will
+    // read from it, and what the browser has learned so far (algorithm.js).
+    const listDiv = div.find('.sim-list')[0]
+    try {
+      const a = parseAlgorithm(item.text || '')
+      const learned = learnedSignals()
+      const top = Object.entries(learned).sort((x, y) => y[1] - x[1]).slice(0, 8)
+      status.style.display = 'none'
+      listDiv.innerHTML = `<h3>This Search Algorithm</h3>
+        <table>
+          ${Object.entries(a.weights).map(([k, v]) => `<tr><th>weight ${k}</th><td>${v}</td></tr>`).join('')}
+          <tr><th>always</th><td>${a.always.length ? a.always.join(', ') : '—'}</td></tr>
+          <tr><th>never</th><td>${a.never.length ? a.never.join(', ') : '—'}</td></tr>
+          <tr><th>batch</th><td>${a.batch || 50}</td></tr>
+        </table>
+        <p class="sim-count">Learned in this browser: ${top.length
+          ? top.map(([d, v]) => `${d} (${v.toFixed(2)})`).join(', ')
+          : 'nothing yet — sites you are near, open and click will appear here'}</p>
+        <p class="sim-count"><button class="sim-remember">Remember</button> <button class="sim-forget">Forget</button>
+          <span class="sim-remember-note"></span></p>`
+      const note = listDiv.querySelector('.sim-remember-note')
+      listDiv.querySelector('.sim-remember').addEventListener('click', async () => {
+        try {
+          const n = await rememberInto(div.parents('.page'))
+          note.textContent = `${n} sites written into "Sites I visit" — read the roster above, delete any line.`
+        } catch (e) { note.textContent = `Could not remember here: ${e.message}` }
+      })
+      listDiv.querySelector('.sim-forget').addEventListener('click', () => {
+        forget(); note.textContent = 'Forgotten — the browser starts learning again from here.'
+      })
+    } catch (e) {
+      status.textContent = `Algorithm unreadable: ${e.message}`
+    }
 
   } else if (mode === 'list') {
     const listDiv = div.find('.sim-list')[0]
@@ -454,6 +515,66 @@ export const bind = (div, item) => {
       window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
     }
 
+    // Incremental federated search (batch.js): on by default for a scope
+    // that reaches the galaxy, off for a farm-only scope, BATCH n/off decides.
+    const batched = eff => batch != null ? batch > 0
+      : eff.some(sp => sp.toUpperCase() === 'GALAXY')
+    const results = div.find('.sim-results')[0]
+
+    const doBatched = async (query, eff, seeded) => {
+      const algorithm = await loadAlgorithm(algorithmRef, origin)
+      const rosterDomains = eff.filter(sp => !isScope(sp) && sp !== '*' && !isGlob(sp))
+      let ghost = null
+      const openAsPage = merged => {
+        const page = flatPage(query, merged)
+        if (ghost) ghost.remove()
+        window.wiki.showResult(window.wiki.newPage(page), { $page: div.parents('.page') })
+        ghost = div.parents('.page').next('.page')
+      }
+      const render = (merged, state) => {
+        const shown = merged.slice(0, limit)
+        const head = state.running
+          ? `Searched ${state.searched.toLocaleString()} of ${state.total.toLocaleString()} sites — ` +
+            `${merged.length} results — searching…`
+          : state.converged
+            ? `Searched ${state.searched.toLocaleString()} of ${state.total.toLocaleString()} sites — ` +
+              `${merged.length} results — the top ${limit} stopped changing`
+            : `Searched ${state.searched.toLocaleString()} of ${state.total.toLocaleString()} sites — ` +
+              `${merged.length} results`
+        const rest = state.total - state.searched
+        const via = [...new Set(merged.map(r => r.via).filter(Boolean))]
+        const tier = `<small class="sim-tier">semantic · nearest sites first${via.length ? ` · off-farm sites answered by ${via.join(', ')}` : ''}</small>`
+        results.innerHTML = `<h3>${head}</h3>${tier}<ul>${
+          shown.map(r => `<li>${simLink(r.site, r.slug, r.title, r.semantic)}` +
+            (r.siblings?.length ? ` <small>+${r.siblings.length}</small>` : '') + '</li>').join('')
+        }</ul><p class="sim-count sim-batch-controls">` +
+          (state.running ? `<button class="sim-stop">Stop</button>` : '') +
+          (!state.running && rest > 0 ? `<button class="sim-more">Search the remaining ${rest.toLocaleString()} sites</button>` : '') +
+          (!state.running && merged.length ? `<button class="sim-open">Open as page</button>` : '') +
+          (state.unindexed?.length && !state.running
+            ? `<br><small>Sites that look relevant but carry no page vectors yet: ${state.unindexed.slice(0, 8).join(', ')}</small>` : '') +
+          `</p>`
+        results.querySelector('.sim-stop')?.addEventListener('click', () => state.stop())
+        results.querySelector('.sim-more')?.addEventListener('click', () => state.continueAll())
+        results.querySelector('.sim-open')?.addEventListener('click', () => openAsPage(merged))
+        results.querySelectorAll('.sim-link').forEach(a => a.addEventListener('click', e => {
+          e.preventDefault()
+          const { site, slug, title } = a.dataset
+          credit(site, 'clicked')
+          window.wiki.pageHandler.context = { site: window.location.hostname, slug: 'search-tool' }
+          window.wiki.doInternalLink(title, div.parents('.page'), site)
+        }))
+      }
+      status.textContent = ''
+      const out = await runBatched({
+        origin, query, seeded, specs: eff.length ? eff : ['GALAXY'], limit, threshold, thresholdSet,
+        batch: batch || 50, roster: rosterDomains, algorithm, render,
+        status: t => { status.textContent = t },
+      })
+      status.textContent = readyLine
+      return out
+    }
+
     const doReport = async () => {
       const query = input.value.trim()
       if (!query) return
@@ -461,6 +582,11 @@ export const bind = (div, item) => {
       status.textContent = farms.length ? 'Generating report (asking peer farms)…' : 'Generating report…'
       try {
         const eff = await specsP
+        if (batched(eff)) {
+          const seeded = subject && query === subject.title ? seedParams() : {}
+          await doBatched(query, eff, seeded)
+          return
+        }
         // A hand-edited query is a new question — drop the page seed then.
         const seeded = subject && query === subject.title ? seedParams() : {}
         const body = { query, domains: eff.length ? eff : ['*'], limit, live, ...seeded }

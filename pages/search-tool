@@ -1,168 +1,188 @@
 {
-  "title": "Search Tool",
-  "story": [
-    {
+ "title": "Search Tool",
+ "story": [
+  {
+   "type": "markdown",
+   "id": "e13d10c38c88ff88",
+   "text": "Search this wiki, and the wikis around it. Ask for pages like the one you were just reading, or search this site, the whole farm, or the wider federation \u2014 and see the state of the index the answers come from."
+  },
+  {
+   "type": "markdown",
+   "id": "eb958d43d4264fd5",
+   "text": "## Like the page you came from\n\nOpened beside another page, this searches for pages close in meaning to that one \u2014 no typing. Opened on its own, it works from this page instead."
+  },
+  {
+   "type": "similarity",
+   "id": "ac3777b8ddf08f4a",
+   "text": "SIMILAR: medium\nSUBJECT\n*\nLIMIT: 10"
+  },
+  {
+   "type": "markdown",
+   "id": "ecb88f9a4ca03e53",
+   "text": "## Search this site"
+  },
+  {
+   "type": "similarity",
+   "id": "240ca379bbbf95ff",
+   "text": "SITE\nREPORT\nLIMIT: 10"
+  },
+  {
+   "type": "markdown",
+   "id": "99d53ddabf48c89e",
+   "text": "## Search the whole farm"
+  },
+  {
+   "type": "similarity",
+   "id": "bde4ee0cb2cbc014",
+   "text": "*\nREPORT\nLIMIT: 10"
+  },
+  {
+   "type": "markdown",
+   "id": "12487c2e344fde5e",
+   "text": "## Search the federation\n\nEvery wiki the registry knows, searched a batch at a time: the sites you are near first \u2014 your lineup, the sites your [[Search Algorithm]] likes, the federation's followed tier \u2014 then outward by how close each site is to the query, until the top results stop changing. Deliberately opt-in: the wildcard scope never reaches outside on its own."
+  },
+  {
+   "type": "similarity",
+   "id": "e0c23ec26680bb1d",
+   "text": "GALAXY\nREPORT\nBATCH 50\nALGORITHM [[Search Algorithm]]\nLIMIT: 10"
+  },
+  {
+   "type": "markdown",
+   "id": "4093f4900370bf1e",
+   "text": "## Where should a page like this live?\n\nPaste a title and opening paragraph; the farm votes on which site it belongs to."
+  },
+  {
+   "type": "similarity",
+   "id": "3427aaebe0af9cf0",
+   "text": "*\nSITES\nLIMIT: 5"
+  },
+  {
+   "type": "markdown",
+   "id": "1917c2f8c6bf118b",
+   "text": "# The Index"
+  },
+  {
+   "type": "similarity",
+   "id": "cb738ee74c6228ab",
+   "text": "STATUS"
+  },
+  {
+   "type": "markdown",
+   "id": "cf2ec2e014ea8ded",
+   "text": "# Make This Page Your Own\n\nThis page is shipped by the [[Similarity Plugin]], which is why it is here on a site that never created it. Fork it \u2014 the \u2630 menu, then Fork \u2014 and your copy wins from then on: the server looks in this site's own pages first and only falls back to the plugin's copy when there is nothing there.\n\nSo change it. Narrow the farm search to the sites you actually read, drop the federation search if it is never what you want, add a search for a subject you return to. The searches are written as plain lines in each item \u2014 open one and read it. [[About Similarity Plugin]] explains the words."
+  },
+  {
+   "type": "markdown",
+   "id": "7f64f839442f38eb",
+   "text": "# See\n\n- [[Semantic Search]] \u2014 the same searches, without the framing\n- [[About Similarity Plugin]] \u2014 the DSL these items are written in\n- [[SemIndex Plugin]] \u2014 what builds the index this page reports on"
+  }
+ ],
+ "journal": [
+  {
+   "type": "create",
+   "item": {
+    "title": "Search Tool",
+    "story": [
+     {
       "type": "markdown",
       "id": "e13d10c38c88ff88",
       "text": "Search this wiki, and the wikis around it. Ask for pages like the one you were just reading, or search this site, the whole farm, or the wider federation \u2014 and see the state of the index the answers come from."
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "eb958d43d4264fd5",
       "text": "## Like the page you came from\n\nOpened beside another page, this searches for pages close in meaning to that one \u2014 no typing. Opened on its own, it works from this page instead."
-    },
-    {
+     },
+     {
       "type": "similarity",
       "id": "ac3777b8ddf08f4a",
       "text": "SIMILAR: medium\nSUBJECT\n*\nLIMIT: 10"
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "ecb88f9a4ca03e53",
       "text": "## Search this site"
-    },
-    {
+     },
+     {
       "type": "similarity",
       "id": "240ca379bbbf95ff",
       "text": "SITE\nREPORT\nLIMIT: 10"
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "99d53ddabf48c89e",
       "text": "## Search the whole farm"
-    },
-    {
+     },
+     {
       "type": "similarity",
       "id": "bde4ee0cb2cbc014",
       "text": "*\nREPORT\nLIMIT: 10"
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "12487c2e344fde5e",
       "text": "## Search the federation\n\nSites beyond this farm, indexed separately. Slower, and deliberately opt-in \u2014 the wildcard scope never reaches outside on its own."
-    },
-    {
+     },
+     {
       "type": "similarity",
       "id": "e0c23ec26680bb1d",
       "text": "GALAXY\nREPORT\nLIMIT: 10"
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "4093f4900370bf1e",
       "text": "## Where should a page like this live?\n\nPaste a title and opening paragraph; the farm votes on which site it belongs to."
-    },
-    {
+     },
+     {
       "type": "similarity",
       "id": "3427aaebe0af9cf0",
       "text": "*\nSITES\nLIMIT: 5"
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "1917c2f8c6bf118b",
       "text": "# The Index"
-    },
-    {
+     },
+     {
       "type": "similarity",
       "id": "cb738ee74c6228ab",
       "text": "STATUS"
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "cf2ec2e014ea8ded",
       "text": "# Make This Page Your Own\n\nThis page is shipped by the [[Similarity Plugin]], which is why it is here on a site that never created it. Fork it \u2014 the \u2630 menu, then Fork \u2014 and your copy wins from then on: the server looks in this site's own pages first and only falls back to the plugin's copy when there is nothing there.\n\nSo change it. Narrow the farm search to the sites you actually read, drop the federation search if it is never what you want, add a search for a subject you return to. The searches are written as plain lines in each item \u2014 open one and read it. [[About Similarity Plugin]] explains the words."
-    },
-    {
+     },
+     {
       "type": "markdown",
       "id": "7f64f839442f38eb",
       "text": "# See\n\n- [[Semantic Search]] \u2014 the same searches, without the framing\n- [[About Similarity Plugin]] \u2014 the DSL these items are written in\n- [[SemIndex Plugin]] \u2014 what builds the index this page reports on"
-    }
-  ],
-  "journal": [
-    {
-      "type": "create",
-      "item": {
-        "title": "Search Tool",
-        "story": [
-          {
-            "type": "markdown",
-            "id": "e13d10c38c88ff88",
-            "text": "Search this wiki, and the wikis around it. Ask for pages like the one you were just reading, or search this site, the whole farm, or the wider federation \u2014 and see the state of the index the answers come from."
-          },
-          {
-            "type": "markdown",
-            "id": "eb958d43d4264fd5",
-            "text": "## Like the page you came from\n\nOpened beside another page, this searches for pages close in meaning to that one \u2014 no typing. Opened on its own, it works from this page instead."
-          },
-          {
-            "type": "similarity",
-            "id": "ac3777b8ddf08f4a",
-            "text": "SIMILAR: medium\nSUBJECT\n*\nLIMIT: 10"
-          },
-          {
-            "type": "markdown",
-            "id": "ecb88f9a4ca03e53",
-            "text": "## Search this site"
-          },
-          {
-            "type": "similarity",
-            "id": "240ca379bbbf95ff",
-            "text": "SITE\nREPORT\nLIMIT: 10"
-          },
-          {
-            "type": "markdown",
-            "id": "99d53ddabf48c89e",
-            "text": "## Search the whole farm"
-          },
-          {
-            "type": "similarity",
-            "id": "bde4ee0cb2cbc014",
-            "text": "*\nREPORT\nLIMIT: 10"
-          },
-          {
-            "type": "markdown",
-            "id": "12487c2e344fde5e",
-            "text": "## Search the federation\n\nSites beyond this farm, indexed separately. Slower, and deliberately opt-in \u2014 the wildcard scope never reaches outside on its own."
-          },
-          {
-            "type": "similarity",
-            "id": "e0c23ec26680bb1d",
-            "text": "GALAXY\nREPORT\nLIMIT: 10"
-          },
-          {
-            "type": "markdown",
-            "id": "4093f4900370bf1e",
-            "text": "## Where should a page like this live?\n\nPaste a title and opening paragraph; the farm votes on which site it belongs to."
-          },
-          {
-            "type": "similarity",
-            "id": "3427aaebe0af9cf0",
-            "text": "*\nSITES\nLIMIT: 5"
-          },
-          {
-            "type": "markdown",
-            "id": "1917c2f8c6bf118b",
-            "text": "# The Index"
-          },
-          {
-            "type": "similarity",
-            "id": "cb738ee74c6228ab",
-            "text": "STATUS"
-          },
-          {
-            "type": "markdown",
-            "id": "cf2ec2e014ea8ded",
-            "text": "# Make This Page Your Own\n\nThis page is shipped by the [[Similarity Plugin]], which is why it is here on a site that never created it. Fork it \u2014 the \u2630 menu, then Fork \u2014 and your copy wins from then on: the server looks in this site's own pages first and only falls back to the plugin's copy when there is nothing there.\n\nSo change it. Narrow the farm search to the sites you actually read, drop the federation search if it is never what you want, add a search for a subject you return to. The searches are written as plain lines in each item \u2014 open one and read it. [[About Similarity Plugin]] explains the words."
-          },
-          {
-            "type": "markdown",
-            "id": "7f64f839442f38eb",
-            "text": "# See\n\n- [[Semantic Search]] \u2014 the same searches, without the framing\n- [[About Similarity Plugin]] \u2014 the DSL these items are written in\n- [[SemIndex Plugin]] \u2014 what builds the index this page reports on"
-          }
-        ]
-      },
-      "date": 1788434000000,
-      "provenance": "Claude Code, 3 September 2026, through a dialogue with David Bovill"
-    }
-  ],
-  "plugin": "similarity"
+     }
+    ]
+   },
+   "date": 1788434000000,
+   "provenance": "Claude Code, 3 September 2026, through a dialogue with David Bovill"
+  },
+  {
+   "type": "edit",
+   "id": "12487c2e344fde5e",
+   "item": {
+    "type": "markdown",
+    "id": "12487c2e344fde5e",
+    "text": "## Search the federation\n\nEvery wiki the registry knows, searched a batch at a time: the sites you are near first \u2014 your lineup, the sites your [[Search Algorithm]] likes, the federation's followed tier \u2014 then outward by how close each site is to the query, until the top results stop changing. Deliberately opt-in: the wildcard scope never reaches outside on its own."
+   },
+   "date": 1788507377909
+  },
+  {
+   "type": "edit",
+   "id": "e0c23ec26680bb1d",
+   "item": {
+    "type": "similarity",
+    "id": "e0c23ec26680bb1d",
+    "text": "GALAXY\nREPORT\nBATCH 50\nALGORITHM [[Search Algorithm]]\nLIMIT: 10"
+   },
+   "date": 1788507377909
+  }
+ ],
+ "plugin": "similarity"
 }

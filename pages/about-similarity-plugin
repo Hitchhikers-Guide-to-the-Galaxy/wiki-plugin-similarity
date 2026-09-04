@@ -93,8 +93,13 @@
     },
     {
       "type": "markdown",
+      "id": "b6fe791b56728d2c",
+      "text": "0.19.0 searches the federation a batch at a time, nearest sites first \u2014 the [https://search.fedwiki.club/view/incremental-federated-search Incremental Federated Search] design. Underneath is the **Site Index**: one vector per site for every site the galaxy registry knows (built nightly by the galaxy writer into `sites.json`, served at `galaxy-sites.json`, fetched from a peer by farms without a galaxy tree), so a query ranks thousands of sites before it reads a single page vector \u2014 the resource-selection step of federated search. `site-rank.json` returns that order: the sites you are near first (an item's `ROSTER` lines, the lineup's neighbourhood, the registry's followed tier, the reader's own [[Search Algorithm]]), then everything else by centroid similarity, ties to the freshest index. A `REPORT` whose scope reaches `GALAXY` \u2014 or any scope with `BATCH n` \u2014 then searches those sites fifty at a time through `search-report.json {flat: true}`, merging in place and stopping when three consecutive batches leave the top results unchanged, with *Search the remaining sites* behind a button and *Open as page* for the merged result. Sites that rank highly while carrying no page vectors are listed, and logged, so the galaxy scout promotes them: what people search for decides what is embedded next. The cascade for farms with no galaxy of their own: `similarity.json` names `peers` in preference order, the Site Index comes from the first, and batch domains a farm holds no vectors for are asked of that peer and merged back marked by source. **Search Algorithm** is a second plugin-served page \u2014 rosters of sites liked and visited, and an `ALGORITHM` item whose `WEIGHT`, `ALWAYS`, `NEVER` and `BATCH` lines the ranker reads \u2014 that a fork makes yours; the browser learns which sites you are near, open and click (decaying weekly, never leaving the browser), and **Remember** writes the top of that into the page's roster through an ordinary save. Off-farm pages built from items the prose count never sees are no longer dropped as stubs when they carry four or more items \u2014 27% of galaxy pages had under 120 characters of prose, most of them none \u2014 and `domains` may be a string as well as an array."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.18.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.19.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
@@ -329,6 +334,27 @@
         "text": "**Version:** 0.18.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
       },
       "date": 1788505947403
+    },
+    {
+      "type": "add",
+      "id": "b6fe791b56728d2c",
+      "item": {
+        "type": "markdown",
+        "id": "b6fe791b56728d2c",
+        "text": "0.19.0 searches the federation a batch at a time, nearest sites first \u2014 the [https://search.fedwiki.club/view/incremental-federated-search Incremental Federated Search] design. Underneath is the **Site Index**: one vector per site for every site the galaxy registry knows (built nightly by the galaxy writer into `sites.json`, served at `galaxy-sites.json`, fetched from a peer by farms without a galaxy tree), so a query ranks thousands of sites before it reads a single page vector \u2014 the resource-selection step of federated search. `site-rank.json` returns that order: the sites you are near first (an item's `ROSTER` lines, the lineup's neighbourhood, the registry's followed tier, the reader's own [[Search Algorithm]]), then everything else by centroid similarity, ties to the freshest index. A `REPORT` whose scope reaches `GALAXY` \u2014 or any scope with `BATCH n` \u2014 then searches those sites fifty at a time through `search-report.json {flat: true}`, merging in place and stopping when three consecutive batches leave the top results unchanged, with *Search the remaining sites* behind a button and *Open as page* for the merged result. Sites that rank highly while carrying no page vectors are listed, and logged, so the galaxy scout promotes them: what people search for decides what is embedded next. The cascade for farms with no galaxy of their own: `similarity.json` names `peers` in preference order, the Site Index comes from the first, and batch domains a farm holds no vectors for are asked of that peer and merged back marked by source. **Search Algorithm** is a second plugin-served page \u2014 rosters of sites liked and visited, and an `ALGORITHM` item whose `WEIGHT`, `ALWAYS`, `NEVER` and `BATCH` lines the ranker reads \u2014 that a fork makes yours; the browser learns which sites you are near, open and click (decaying weekly, never leaving the browser), and **Remember** writes the top of that into the page's roster through an ordinary save. Off-farm pages built from items the prose count never sees are no longer dropped as stubs when they carry four or more items \u2014 27% of galaxy pages had under 120 characters of prose, most of them none \u2014 and `domains` may be a string as well as an array."
+      },
+      "after": null,
+      "date": 1788507728115
+    },
+    {
+      "type": "edit",
+      "id": "21eb5354d2adb29e",
+      "item": {
+        "type": "markdown",
+        "id": "21eb5354d2adb29e",
+        "text": "**Version:** 0.19.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      },
+      "date": 1788507728115
     }
   ]
 }
