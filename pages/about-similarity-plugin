@@ -125,6 +125,11 @@
       "type": "markdown",
       "id": "e2cde2572a99224e",
       "text": "**0.21.0** \u2014 the cascade beyond the first peer (Mini Indexer Plan, Phase 4). A flat report's missing domains walk the farm's peers **in order**, each asked only for what is still missing; a peer's answer says which domains it `held`, so the walk moves on with the rest, two hops at most and never back to a host already in the chain. The Cafe names only the Pi5; the Pi5 names the mini after itself; a page only the mini indexed is answered from any Cafe site, marked `via` the host that had it. The result page names who answered \u2014 this farm and each peer, by sites \u2014 when each result's site was last indexed and which indexer placed it, and how old the Site Index is."
+    },
+    {
+      "type": "markdown",
+      "id": "ac44fae5937e27eb",
+      "text": "**0.21.1** \u2014 three fixes from the first day of the second peer. A farm's copy of a peer's Site Index is checked **hourly** by conditional GET, and always once at startup, so a restart never serves a copy the peer has since rebuilt \u2014 it was six hours, and a 304 reset the clock, so a new indexer's sites could take most of a day to reach the Cafe. A domain named explicitly in a batched item is **searched whether or not the Site Index knows it**, as one more batch, since the cascade finds the peer that holds it. And a batched item's ready line reports how far the Site Index reaches rather than how many domains this host holds, which on a farm with no galaxy tree read as a misleading zero."
     }
   ],
   "plugin": "similarity",
@@ -474,6 +479,17 @@
       },
       "after": "21eb5354d2adb29e",
       "date": 1788545199179
+    },
+    {
+      "type": "add",
+      "id": "ac44fae5937e27eb",
+      "item": {
+        "type": "markdown",
+        "id": "ac44fae5937e27eb",
+        "text": "**0.21.1** \u2014 three fixes from the first day of the second peer. A farm's copy of a peer's Site Index is checked **hourly** by conditional GET, and always once at startup, so a restart never serves a copy the peer has since rebuilt \u2014 it was six hours, and a 304 reset the clock, so a new indexer's sites could take most of a day to reach the Cafe. A domain named explicitly in a batched item is **searched whether or not the Site Index knows it**, as one more batch, since the cascade finds the peer that holds it. And a batched item's ready line reports how far the Site Index reaches rather than how many domains this host holds, which on a farm with no galaxy tree read as a misleading zero."
+      },
+      "after": "e2cde2572a99224e",
+      "date": 1788551290021
     }
   ]
 }

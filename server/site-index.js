@@ -28,7 +28,11 @@ const https = require('node:https')
 const { siteCentroid } = require('./vector-store')
 const { listDomains } = require('./farm-lib')
 
-const TTL_MS = parseInt(process.env.WIKI_SITE_INDEX_TTL_MS || String(6 * 3600 * 1000), 10)
+// A peer's copy is checked hourly by conditional GET — one 304 an hour when
+// nothing changed — and always once at startup, so a restart never serves a
+// copy the peer has since rebuilt (0.21.1; it was six hours, and a 304 reset
+// the clock, so a new indexer's sites could take most of a day to arrive).
+const TTL_MS = parseInt(process.env.WIKI_SITE_INDEX_TTL_MS || String(3600 * 1000), 10)
 
 const cacheDir = () => path.join(process.env.HOME || '/tmp', '.cache', 'wiki-similarity')
 const peerCopy = () => path.join(cacheDir(), 'galaxy-sites.json')
@@ -93,7 +97,7 @@ const getJson = (url, headers = {}, timeoutMs = 30_000) => new Promise((resolve,
 let refreshing = null
 // Refresh the peer copy if older than TTL. peers: ['https://host', ...].
 // Conditional on Last-Modified so an unchanged index costs one 304.
-const refreshFromPeers = async (peers, galaxyDir) => {
+const refreshFromPeers = async (peers, galaxyDir, force = false) => {
   if (!peers || !peers.length) return null
   if (galaxyDir && fs.existsSync(path.join(galaxyDir, 'sites.json'))) return null
   if (refreshing) return refreshing
@@ -101,7 +105,7 @@ const refreshFromPeers = async (peers, galaxyDir) => {
     const copy = peerCopy()
     let age = Infinity, since = null
     try { const st = fs.statSync(copy); age = Date.now() - st.mtimeMs; since = st.mtime.toUTCString() } catch { /* none */ }
-    if (age < TTL_MS) return copy
+    if (!force && age < TTL_MS) return copy
     for (const peer of peers) {
       try {
         const base = peer.replace(/\/$/, '')

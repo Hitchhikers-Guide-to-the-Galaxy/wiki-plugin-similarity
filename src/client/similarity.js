@@ -496,6 +496,26 @@ export const bind = (div, item) => {
         const domains = await resolveDomains(eff.length ? eff : ['*'], origin)
         const pages = domains.reduce((n, d) => n + (d.page_count || 0), 0)
         readyLine = configSummary('Report ready', pages, domains.length)
+        // A batched item searches by the Site Index, not this farm's vector
+        // listing — so say how far the index reaches, not how many domains
+        // this host happens to hold (0 on a farm with no galaxy tree).
+        const isBatched = batch != null ? batch > 0 : eff.some(sp => sp.toUpperCase() === 'GALAXY')
+        if (isBatched) {
+          try {
+            const health = await fetch(`${origin}/system/similarity-health.json`).then(r => r.json())
+            const si = health.siteIndex || {}
+            const named = eff.filter(sp => /\./.test(sp) && !/[*?]/.test(sp) &&
+              !['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(sp.toUpperCase()))
+            const reach = si.count
+              ? `ranks ${si.count.toLocaleString()} sites from the Site Index${si.via === 'peer' ? ' (a peer\'s copy)' : ''}`
+              : 'no Site Index on this farm — batches ask its peers'
+            const parts = [`Ready — ${reach}`]
+            if (named.length) parts.push(`${named.length} named site${named.length > 1 ? 's' : ''} searched wherever held`)
+            if (thresholdSet) parts.push(`threshold ${threshold}`)
+            parts.push(`limit ${limit}`)
+            readyLine = parts.join(' · ')
+          } catch { /* keep the domain summary */ }
+        }
         if (farms.length) readyLine += ` · +${farms.length} peer farm${farms.length > 1 ? 's' : ''}`
         if (subject) readyLine = `${subjectNote(subject)} · ${readyLine}`
         status.textContent = readyLine

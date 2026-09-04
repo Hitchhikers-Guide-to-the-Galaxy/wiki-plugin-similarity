@@ -285,8 +285,8 @@ const startServer = ({ argv, app }) => {
   // The Site Index: this host's own galaxy tree carries one; a farm without
   // one fetches its nearest peer's copy (site-index.js), now and every TTL.
   const peers = () => filePeers(farmRoot)
-  const refreshSiteIndex = () => refreshFromPeers(peers(), galaxyDir).catch(() => null)
-  refreshSiteIndex()
+  const refreshSiteIndex = force => refreshFromPeers(peers(), galaxyDir, force === true).catch(() => null)
+  refreshSiteIndex(true)   // at startup: a conditional GET whatever the copy's age
   setInterval(refreshSiteIndex, 3600 * 1000).unref()
   // The graveyard's verdicts, daily: which sites are dead, moved or shaky.
   const refreshVerdictFeed = () => refreshVerdicts(verdictFeed(farmRoot)).catch(() => null)

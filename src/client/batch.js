@@ -64,7 +64,15 @@ const runBatched = async opts => {
     query, ...seeded, domains: specs, prefer, algorithm: algorithm || {}, batch: batch || 50,
   })
   const batches = rank.batches || []
-  const total = rank.count || batches.reduce((n, b) => n + b.length, 0)
+  // A domain named explicitly is searched whether or not this farm's Site
+  // Index knows it: the cascade finds the peer that holds it. Unranked
+  // explicit domains go last, as one more batch.
+  const ranked = new Set(batches.flat().map(d => d.toLowerCase()))
+  const explicit = (specs || []).filter(sp => typeof sp === 'string' && /\./.test(sp) &&
+    !/[*?]/.test(sp) && !['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(sp.toUpperCase()) &&
+    !ranked.has(sp.toLowerCase()))
+  if (explicit.length) batches.push(explicit)
+  const total = (rank.count || 0) + explicit.length || batches.reduce((n, b) => n + b.length, 0)
   const state = { searched: 0, total, batches: batches.length, done: 0, stopped: false,
                   converged: false, running: true, unindexed: rank.unindexed || [],
                   // who answered: this farm and each peer, by sites searched
