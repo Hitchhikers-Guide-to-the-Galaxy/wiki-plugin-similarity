@@ -76,6 +76,7 @@ const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
 const { galaxyRoot, galaxyCacheStats } = require('./galaxy-vectors')
+const { warmUp } = require('./vector-store')
 const { resolveAuthor } = require('./author-index')
 const { ceiling, grantingDomains, guardEnvelope } = require('./peer-guard')
 const { postToPeer, appendPeerSections, makePeerDesk, setModelMeta } = require('./peer')
@@ -239,12 +240,18 @@ const startServer = ({ argv, app }) => {
   // only by GALAXY, an explicit domain, or a roster (see farm-lib.js).
   const farms = [[farmRoot, 'local'], ...EXTRA_FARMS.map(f => [f, 'public'])]
   const galaxyDir = galaxyRoot()
-  if (fs.existsSync(galaxyDir)) farms.push([galaxyDir, 'galaxy'])
+  if (galaxyDir && fs.existsSync(galaxyDir)) farms.push([galaxyDir, 'galaxy'])
   // Restricted = the local farm's own wikiDomains (argv, merged by wiki's
   // farm.js) + WIKI_RESTRICTED_DOMAINS globs + extra farms' config files.
   const restricted = loadRestricted(EXTRA_FARMS,
     { wikiDomains: argv.wikiDomains, globs: RESTRICTED_GLOBS })
   const ctx = { farms, restricted, embed: embedText }
+  // Pay the vector parse once, now, off the request path — and only once per
+  // process however many sites' startServer calls arrive (vector-store.js).
+  warmUp(farms).then(w => {
+    if (w.total) console.log(`[wiki-plugin-similarity] vector store warm: ` +
+      `${w.done}/${w.total} files in ${w.ms} ms${w.capped ? ' (cap reached)' : ''}`)
+  }).catch(e => console.error('[wiki-plugin-similarity] warm-up failed:', e.message))
 
   // Who may see restricted sites (./trust.js): owner session, a tool on this
   // host, or a proxied client on a trusted net. Everyone else gets the
@@ -416,9 +423,14 @@ const startServer = ({ argv, app }) => {
         return url ? { via: 'url', url, source: embedUrlSource() } : embedder.status()
       })(),
       localEmbedderAvailable: localEmbedderAvailable(),
-      galaxy: fs.existsSync(galaxyDir)
-        ? { root: galaxyDir, cache: galaxyCacheStats() }
+      galaxy: galaxyDir && fs.existsSync(galaxyDir)
+        ? { root: galaxyDir }
         : null,
+      // The vector store: sites and pages resident, heap bytes against the
+      // cap, how many files were parsed vs restored from the disk cache, and
+      // the warm-up state — `warm.state` is 'warm' once every file in every
+      // tree is resident, which is when a federation query costs milliseconds.
+      store: galaxyCacheStats(),
       // Restricted-site policy as this server sees it, and whether THIS
       // caller is trusted — the one-line answer to "why can't I see X?".
       restricted: { names: restricted.size, globs: restricted.globs },

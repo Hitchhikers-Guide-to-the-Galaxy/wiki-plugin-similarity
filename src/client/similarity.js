@@ -195,6 +195,20 @@ export const bind = (div, item) => {
       return `${Math.floor(days)} days ago`
     }
     const day = iso => (iso ? new Date(iso).toISOString().slice(0, 10) : '—')
+    // The vector store (0.18.0): what is resident in memory right now, and
+    // whether the warm-up has finished — a federation search costs
+    // milliseconds once it has, and a cold parse until it has.
+    const storeRow = st => {
+      if (!st || !st.warm) return ''
+      const w = st.warm
+      const mb = Math.round((st.bytes || 0) / 1e6)
+      const state = w.state === 'warm'
+        ? `warm — ${w.done.toLocaleString()} sites resident in ${Math.round(w.ms / 1000)} s`
+        : w.state === 'warming' ? `warming — ${w.done.toLocaleString()} of ${w.total.toLocaleString()} sites so far`
+        : 'not warmed'
+      const capped = w.capped ? ' · <strong>cap reached</strong>, some sites re-parse per query' : ''
+      return `<tr><th>Vector store</th><td>${(st.pages || 0).toLocaleString()} pages · ${mb} MB of ${Math.round((st.capBytes || 0) / 1e6)} MB · ${state}${capped}</td></tr>`
+    }
 
     ;(async () => {
       try {
@@ -239,6 +253,7 @@ export const bind = (div, item) => {
             <tr><th>Newest page vectors</th><td>${day(built[built.length - 1])} (${ago(built[built.length - 1])})</td></tr>
             <tr><th>Oldest page vectors</th><td>${day(built[0])} (${ago(built[0])})</td></tr>
             <tr><th>Plugin</th><td>wiki-plugin-similarity ${health.version || '—'}</td></tr>
+            ${storeRow(health.store)}
           </table>
           <p class="sim-count">A domain's vectors are only rebuilt when its pages change, so an old
              date means a quiet site, not a broken one. Pages saved since the last build are findable

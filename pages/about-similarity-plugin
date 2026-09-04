@@ -88,8 +88,13 @@
     },
     {
       "type": "markdown",
+      "id": "21ecf7448823670c",
+      "text": "0.18.0 makes the federation cheap to search, and does it without touching a single index file. A federation query took 46 seconds on the Pi5 \u2014 not to score 100,000 page vectors, which takes tens of milliseconds, but to parse 872 MB of JSON on every query, because the vector cache was capped in *file* bytes and could never hold a federation scope. Each site's vectors now become one Float32 matrix (1.5 KB a page instead of 8.6) held in a cache capped in heap bytes that means what it says; the first parse is written to a plugin-owned disk cache under `~/.cache/wiki-similarity/store` so a restart reads binary in milliseconds; and the store warms itself at startup, off the request path, so the first query is never the cold one and a page save never waits behind it. Every existing consumer of `page.vector` keeps working \u2014 the vectors are views into the matrix. `WIKI_GALAXY_VECTORS=off` switches the galaxy tree off for a process that should not hold a second copy. `similarity-health.json` reports the `store` \u2014 sites and pages resident, bytes against the cap, files parsed versus restored, and the warm-up state \u2014 and `STATUS` shows the same row. Directory listings are memoised for thirty seconds so a thousand stats on a USB drive are not repeated per query. The design behind this and the phases after it is [https://search.fedwiki.club/view/incremental-federated-search Incremental Federated Search]."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.17.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.18.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
@@ -303,6 +308,27 @@
         "text": "**Version:** 0.12.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
       },
       "date": 1785397304700
+    },
+    {
+      "type": "add",
+      "id": "21ecf7448823670c",
+      "item": {
+        "type": "markdown",
+        "id": "21ecf7448823670c",
+        "text": "0.18.0 makes the federation cheap to search, and does it without touching a single index file. A federation query took 46 seconds on the Pi5 \u2014 not to score 100,000 page vectors, which takes tens of milliseconds, but to parse 872 MB of JSON on every query, because the vector cache was capped in *file* bytes and could never hold a federation scope. Each site's vectors now become one Float32 matrix (1.5 KB a page instead of 8.6) held in a cache capped in heap bytes that means what it says; the first parse is written to a plugin-owned disk cache under `~/.cache/wiki-similarity/store` so a restart reads binary in milliseconds; and the store warms itself at startup, off the request path, so the first query is never the cold one and a page save never waits behind it. Every existing consumer of `page.vector` keeps working \u2014 the vectors are views into the matrix. `WIKI_GALAXY_VECTORS=off` switches the galaxy tree off for a process that should not hold a second copy. `similarity-health.json` reports the `store` \u2014 sites and pages resident, bytes against the cap, files parsed versus restored, and the warm-up state \u2014 and `STATUS` shows the same row. Directory listings are memoised for thirty seconds so a thousand stats on a USB drive are not repeated per query. The design behind this and the phases after it is [https://search.fedwiki.club/view/incremental-federated-search Incremental Federated Search]."
+      },
+      "after": null,
+      "date": 1788505947403
+    },
+    {
+      "type": "edit",
+      "id": "21eb5354d2adb29e",
+      "item": {
+        "type": "markdown",
+        "id": "21eb5354d2adb29e",
+        "text": "**Version:** 0.18.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      },
+      "date": 1788505947403
     }
   ]
 }

@@ -96,22 +96,42 @@ const matchesAny = (domain, kind, patterns, restricted) =>
 // List domains across farms matching the patterns, optionally requiring a file
 // (relative to the domain dir) to exist. First farm wins on duplicate names.
 // Returns [{farm, kind, domain}].
+//
+// The directory walk (one readdir plus one access per domain — ~1,000 stats
+// for the galaxy tree, on a USB drive) is memoised per (farm, requireFile)
+// for LIST_TTL_MS; pattern matching runs fresh on every call. Off under the
+// node test runner, whose fixtures change between calls.
+
+const LIST_TTL_MS = process.env.NODE_TEST_CONTEXT ? 0
+  : parseInt(process.env.WIKI_LIST_TTL_MS || '30000', 10)
+const listings = new Map()   // `${farm}\0${requireFile}` → {at, domains}
+
+const domainDirs = (farm, requireFile) => {
+  const key = `${farm}\0${requireFile || ''}`
+  const hit = listings.get(key)
+  if (hit && LIST_TTL_MS && Date.now() - hit.at < LIST_TTL_MS) return hit.domains
+  const domains = []
+  let entries
+  try { entries = fs.readdirSync(farm, { withFileTypes: true }) } catch { entries = [] }
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue
+    if (requireFile) {
+      try { fs.accessSync(path.join(farm, ent.name, requireFile), fs.constants.F_OK) }
+      catch { continue }
+    }
+    domains.push(ent.name)
+  }
+  listings.set(key, { at: Date.now(), domains })
+  return domains
+}
 
 const listDomains = (farms, patterns, restricted, requireFile = null) => {
   const seen = new Set()
   const out = []
   for (const [farm, kind] of farms) {
-    let entries
-    try { entries = fs.readdirSync(farm, { withFileTypes: true }) } catch { continue }
-    for (const ent of entries) {
-      if (!ent.isDirectory()) continue
-      const domain = ent.name
+    for (const domain of domainDirs(farm, requireFile)) {
       if (seen.has(domain)) continue
       if (!matchesAny(domain, kind, patterns, restricted)) continue
-      if (requireFile) {
-        try { fs.accessSync(path.join(farm, domain, requireFile), fs.constants.F_OK) }
-        catch { continue }
-      }
       seen.add(domain)
       out.push({ farm, kind, domain })
     }
@@ -119,6 +139,8 @@ const listDomains = (farms, patterns, restricted, requireFile = null) => {
   out.sort((a, b) => a.domain.localeCompare(b.domain))
   return out
 }
+
+const clearListings = () => listings.clear()
 
 // First existing path for domain + relative sub-path across farm roots.
 const findInFarms = (farms, domain, relPath) => {
@@ -129,4 +151,4 @@ const findInFarms = (farms, domain, relPath) => {
   return null
 }
 
-module.exports = { globMatch, RestrictedSet, loadRestricted, matchesAny, listDomains, findInFarms }
+module.exports = { globMatch, RestrictedSet, loadRestricted, matchesAny, listDomains, findInFarms, clearListings }
