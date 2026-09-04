@@ -10,6 +10,8 @@ const sitemap = [
   { slug: 'oldwiki', title: 'old.wiki', synopsis: 'old.wiki has moved: it now answers from new.wiki; last seen as itself 1 May 2026.' },
   { slug: 'gonewiki', title: 'gone.wiki', synopsis: 'gone.wiki has lapsed: its name no longer resolves; last seen 2 May 2026.' },
   { slug: 'shakywiki', title: 'shaky.wiki', synopsis: 'shaky.wiki is unreliable: up 62% of the last 30 days, 4 flaps, last seen 3 September 2026.' },
+  { slug: 'oldwiki2', title: 'old2.wiki', synopsis: 'old2.wiki is stale: last edit 14 months ago (1 July 2025); 0% of its pages edited in the last 90 days; 40% of its references point at dead sites.' },
+  { slug: 'ancientwiki', title: 'ancient.wiki', synopsis: 'ancient.wiki is abandoned: last edit 4 years ago (2 May 2022).' },
   { slug: 'welcome-visitors', title: 'Welcome Visitors', synopsis: 'Welcome to the graveyard of the federation …' },
 ]
 
@@ -21,7 +23,7 @@ describe('parseVerdicts', () => {
     assert.equal(v['old.wiki'].class, 'moved'); assert.equal(v['old.wiki'].to, 'new.wiki')
     assert.equal(v['gone.wiki'].class, 'lapsed')
     assert.equal(v['shaky.wiki'].class, 'unreliable'); assert.equal(v['shaky.wiki'].to, null)
-    assert.equal(Object.keys(v).length, 4, 'hand pages are not verdicts')
+    assert.equal(Object.keys(v).length, 6, "hand pages are not verdicts")
   })
 })
 
@@ -57,5 +59,28 @@ describe('rankSites with verdicts', () => {
     assert.ok(any.some(x => x.domain === 'readymade.wiki'))
     const solid = rankSites(Q, index, [], { followed: false }, { trust: 'solid' }, verdicts)
     assert.ok(!solid.some(x => x.domain === 'shaky.wiki'))
+  })
+})
+
+describe('staleness verdicts (Phase 6)', () => {
+  it('parses stale and abandoned as classes that are not gone', () => {
+    const v = parseVerdicts(sitemap)
+    assert.equal(v['old2.wiki'].class, 'stale')
+    assert.equal(v['ancient.wiki'].class, 'abandoned')
+    assert.equal(v['old2.wiki'].to, null)
+  })
+  it('sinks stale and abandoned sites by WEIGHT stale, and not when it is 0', () => {
+    const vec = new Float32Array(4).fill(0.5)
+    const local = [
+      { domain: 'old2.wiki', kind: 'own', method: 'pages', vector: vec },
+      { domain: 'ancient.wiki', kind: 'own', method: 'pages', vector: vec },
+      { domain: 'fresh.wiki', kind: 'own', method: 'pages', vector: vec },
+    ]
+    const v = parseVerdicts(sitemap)
+    const ranked = rankSites(vec, null, local, {}, {}, v).map(r => r.domain)
+    assert.deepEqual(ranked, ['fresh.wiki', 'old2.wiki', 'ancient.wiki'])
+    const flat = rankSites(vec, null, local, {}, { weights: { stale: 0 } }, v)
+    assert.equal(new Set(flat.map(r => r.score)).size, 1)
+    assert.ok(rankSites(vec, null, local, {}, {}, v).find(r => r.domain === 'ancient.wiki').reason.includes('abandoned'))
   })
 })

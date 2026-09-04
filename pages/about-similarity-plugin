@@ -128,6 +128,11 @@
     },
     {
       "type": "markdown",
+      "id": "6c51f2131b0e7623",
+      "text": "**0.22.0** \u2014 staleness (Dead Sites Plan, Phase 6). The graveyard's verdicts now include *stale* (a year without an edit, or a third of a site's references dead) and *abandoned* (three years), read from the same sitemap. `site-rank` sinks them by `WEIGHT stale` (default 0.2, abandoned twice as far as stale); a [[Search Algorithm]] with `WEIGHT stale 0` searches old sites on equal terms, and below 0 prefers them. Neither class is gone: the sites are searched, only later."
+    },
+    {
+      "type": "markdown",
       "id": "ac44fae5937e27eb",
       "text": "**0.21.1** \u2014 three fixes from the first day of the second peer. A farm's copy of a peer's Site Index is checked **hourly** by conditional GET, and always once at startup, so a restart never serves a copy the peer has since rebuilt \u2014 it was six hours, and a 304 reset the clock, so a new indexer's sites could take most of a day to reach the Cafe. A domain named explicitly in a batched item is **searched whether or not the Site Index knows it**, as one more batch, since the cascade finds the peer that holds it. And a batched item's ready line reports how far the Site Index reaches rather than how many domains this host holds, which on a farm with no galaxy tree read as a misleading zero."
     },
@@ -506,6 +511,17 @@
       },
       "after": "ac44fae5937e27eb",
       "date": 1788552261437
+    },
+    {
+      "type": "add",
+      "id": "6c51f2131b0e7623",
+      "item": {
+        "type": "markdown",
+        "id": "6c51f2131b0e7623",
+        "text": "**0.22.0** \u2014 staleness (Dead Sites Plan, Phase 6). The graveyard's verdicts now include *stale* (a year without an edit, or a third of a site's references dead) and *abandoned* (three years), read from the same sitemap. `site-rank` sinks them by `WEIGHT stale` (default 0.2, abandoned twice as far as stale); a [[Search Algorithm]] with `WEIGHT stale 0` searches old sites on equal terms, and below 0 prefers them. Neither class is gone: the sites are searched, only later."
+      },
+      "after": "e2cde2572a99224e",
+      "date": 1788558698739
     }
   ]
 }

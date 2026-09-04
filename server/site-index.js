@@ -158,7 +158,7 @@ const localSites = (farms, restricted, exclude) => {
 
 const VERDICT_TTL_MS = parseInt(process.env.WIKI_VERDICT_TTL_MS || String(24 * 3600 * 1000), 10)
 const verdictCopy = () => path.join(cacheDir(), 'verdicts-sitemap.json')
-const VERDICT_RE = /^(\S+) (?:is|has) (dead|moved|lapsed|unreliable|flaky)\b(.*)$/i
+const VERDICT_RE = /^(\S+) (?:is|has) (dead|moved|lapsed|unreliable|flaky|stale|abandoned)\b(.*)$/i
 const TARGET_RE = /(?:probably moved to|now answers from) ([a-z0-9.-]+(?::\d+)?)/i
 
 const parseVerdicts = sitemap => {

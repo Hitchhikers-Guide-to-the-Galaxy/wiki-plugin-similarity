@@ -44,12 +44,12 @@
   {
    "type": "similarity",
    "id": "8b616e19c4ff3973",
-   "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nTRUST flaky\nBATCH 50"
+   "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nWEIGHT stale 0.2\nTRUST flaky\nBATCH 50"
   },
   {
    "type": "markdown",
    "id": "c7a6381efe13e028",
-   "text": "`WEIGHT` says how much each signal moves a site: **liked** for the roster above, **visited** for what the browser learned, **neighbourhood** for sites already in your lineup, **followed** for the federation's followed tier, **centroid** for how close a site is to the query, **fresh** for how recent the index holding it is. **reliable** for how far a site the [https://dead.fedwiki.club/view/welcome-visitors graveyard] calls unreliable or flaky sinks. `TRUST solid` skips shaky sites, `TRUST flaky` searches them later (the default), `TRUST any` searches even the dead and the moved. `ALWAYS site` pins a site into the first batch; `NEVER site` prunes it from every batch; `BATCH n` sets how many sites each request searches. Words the ranker does not know are ignored, so this vocabulary can grow."
+   "text": "`WEIGHT` says how much each signal moves a site: **liked** for the roster above, **visited** for what the browser learned, **neighbourhood** for sites already in your lineup, **followed** for the federation's followed tier, **centroid** for how close a site is to the query, **fresh** for how recent the index holding it is. **reliable** for how far a site the [https://dead.fedwiki.club/view/welcome-visitors graveyard] calls unreliable or flaky sinks, **stale** for how far a live site nobody tends sinks — the graveyard calls a site stale after a year without an edit, or when a third of its references are dead, and abandoned after three years; set `WEIGHT stale 0` to dig in the old ones on equal terms, or below 0 to prefer them. `TRUST solid` skips shaky sites, `TRUST flaky` searches them later (the default), `TRUST any` searches even the dead and the moved. `ALWAYS site` pins a site into the first batch; `NEVER site` prunes it from every batch; `BATCH n` sets how many sites each request searches. Words the ranker does not know are ignored, so this vocabulary can grow."
   },
   {
    "type": "markdown",
@@ -149,7 +149,7 @@
    "item": {
     "type": "similarity",
     "id": "8b616e19c4ff3973",
-    "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nTRUST flaky\nBATCH 50"
+    "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nWEIGHT stale 0.2\nTRUST flaky\nBATCH 50"
    },
    "date": 1788517953986
   },
@@ -159,7 +159,7 @@
    "item": {
     "type": "markdown",
     "id": "c7a6381efe13e028",
-    "text": "`WEIGHT` says how much each signal moves a site: **liked** for the roster above, **visited** for what the browser learned, **neighbourhood** for sites already in your lineup, **followed** for the federation's followed tier, **centroid** for how close a site is to the query, **fresh** for how recent the index holding it is. **reliable** for how far a site the [https://dead.fedwiki.club/view/welcome-visitors graveyard] calls unreliable or flaky sinks. `TRUST solid` skips shaky sites, `TRUST flaky` searches them later (the default), `TRUST any` searches even the dead and the moved. `ALWAYS site` pins a site into the first batch; `NEVER site` prunes it from every batch; `BATCH n` sets how many sites each request searches. Words the ranker does not know are ignored, so this vocabulary can grow."
+    "text": "`WEIGHT` says how much each signal moves a site: **liked** for the roster above, **visited** for what the browser learned, **neighbourhood** for sites already in your lineup, **followed** for the federation's followed tier, **centroid** for how close a site is to the query, **fresh** for how recent the index holding it is. **reliable** for how far a site the [https://dead.fedwiki.club/view/welcome-visitors graveyard] calls unreliable or flaky sinks, **stale** for how far a live site nobody tends sinks — the graveyard calls a site stale after a year without an edit, or when a third of its references are dead, and abandoned after three years; set `WEIGHT stale 0` to dig in the old ones on equal terms, or below 0 to prefer them. `TRUST solid` skips shaky sites, `TRUST flaky` searches them later (the default), `TRUST any` searches even the dead and the moved. `ALWAYS site` pins a site into the first batch; `NEVER site` prunes it from every batch; `BATCH n` sets how many sites each request searches. Words the ranker does not know are ignored, so this vocabulary can grow."
    },
    "date": 1788517953986
   }

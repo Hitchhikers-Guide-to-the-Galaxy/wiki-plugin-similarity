@@ -18,13 +18,14 @@
 //   NEVER  spam.example       pruned from every batch
 //   BATCH 50                  sites searched per request
 //   WEIGHT reliable 0.3       how far an unreliable site sinks (Dead Sites Plan)
+//   WEIGHT stale 0.2          how far a stale or abandoned site sinks; 0 or less digs in the old ones
 //   TRUST solid|flaky|any     solid: skip shaky sites; flaky: search them later
 //                             (default); any: even dead and moved sites
 //
 // Unknown words are ignored, so the vocabulary can grow release by release.
 
 const LEARNED_KEY = 'similarity:learned'
-const WEIGHT_NAMES = new Set(['liked', 'visited', 'neighbourhood', 'neighborhood', 'followed', 'centroid', 'fresh', 'reliable'])
+const WEIGHT_NAMES = new Set(['liked', 'visited', 'neighbourhood', 'neighborhood', 'followed', 'centroid', 'fresh', 'reliable', 'stale'])
 const SITE = /^([a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+|localhost)(:\d+)?$/
 
 const parseAlgorithm = text => {

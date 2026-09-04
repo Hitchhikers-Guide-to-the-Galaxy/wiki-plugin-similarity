@@ -20,13 +20,16 @@
 
 const DEFAULT_WEIGHTS = {
   liked: 1.0, visited: 0.6, neighbourhood: 0.4, followed: 0.2,
-  centroid: 1.0, fresh: 0.2, reliable: 0.3,
+  centroid: 1.0, fresh: 0.2, reliable: 0.3, stale: 0.2,
 }
 // How a verdict from the Semantic Site Graveyard moves a site (Dead Sites
 // Plan): dead, lapsed and moved sites leave the list — a moved site is
 // replaced by where it went when that is known — unless the reader's
 // algorithm says TRUST any; unreliable and flaky sink by `reliable`.
 const VERDICT_PENALTY = { unreliable: 1.0, flaky: 0.5 }
+// Staleness (Dead Sites Plan, Phase 6): a live site nobody tends sinks by
+// WEIGHT stale; a reader who wants the old ones sets it to 0 or below.
+const STALE_PENALTY = { stale: 0.5, abandoned: 1.0 }
 const KIND_FRESHNESS = { local: 1.0, public: 1.0, own: 1.0, farm: 0.8, peer: 0.6, galaxy: 0.4 }
 
 const dot = (a, b) => {
@@ -97,8 +100,9 @@ const rankSites = (qvec, index, local, prefer = {}, algorithm = {}, verdicts = {
     if (learned[d] > 0)         { prefScore += w.visited * Math.min(1, learned[d]); reasons.push('learned') }
     const v = verdicts[d]
     const penalty = v ? (VERDICT_PENALTY[v.class] || 0) : 0
-    if (penalty) reasons.push(v.class)
-    const score = prefScore + w.centroid * centroid + w.fresh * r.fresh - w.reliable * penalty
+    const stale = v ? (STALE_PENALTY[v.class] || 0) : 0
+    if (penalty || stale) reasons.push(v.class)
+    const score = prefScore + w.centroid * centroid + w.fresh * r.fresh - w.reliable * penalty - w.stale * stale
     out.push({
       domain: r.domain, kind: r.kind, method: m.method || 'pages', tier: m.tier || '',
       pages: m.pages || 0, indexedAt: m.indexedAt || 0, source: m.source || r.kind,
@@ -130,4 +134,4 @@ const batches = (ranked, size = 50) => {
   return out
 }
 
-module.exports = { rankSites, batches, DEFAULT_WEIGHTS, KIND_FRESHNESS, VERDICT_PENALTY }
+module.exports = { rankSites, batches, DEFAULT_WEIGHTS, KIND_FRESHNESS, VERDICT_PENALTY, STALE_PENALTY }
