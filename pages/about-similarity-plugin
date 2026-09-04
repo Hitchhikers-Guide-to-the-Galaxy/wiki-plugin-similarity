@@ -109,12 +109,12 @@
     {
       "type": "markdown",
       "id": "df7785a66e945d29",
-      "text": "0.20.0 reads the **Semantic Site Graveyard**. [https://dead.fedwiki.club/view/welcome-visitors dead.fedwiki.club] is a wiki Marvin writes nightly from the galaxy registry's probe record: one page per site that is not solid, its first sentence the verdict \u2014 dead, moved, lapsed, unreliable or flaky, and where a moved site went. That makes the wiki's own `sitemap.json` a feed, and the plugin fetches it daily (conditional GET, `similarity.json` `verdicts` to point elsewhere or switch it off, `WIKI_VERDICTS` likewise). `site-rank` then drops dead and lapsed sites from every batch, searches a moved site's destination in its place, and sinks unreliable and flaky sites by `WEIGHT reliable` (default 0.3); the Search Algorithm page gains that weight and `TRUST solid|flaky|any`. `similarity-health.json` reports the feed and how many verdicts it holds. The plan is the [https://plan.ide.earth/view/dead-sites-plan Dead Sites Plan]."
+      "text": "0.20.1 reads the **Semantic Site Graveyard**. [https://dead.fedwiki.club/view/welcome-visitors dead.fedwiki.club] is a wiki Marvin writes nightly from the galaxy registry's probe record: one page per site that is not solid, its first sentence the verdict \u2014 dead, moved, lapsed, unreliable or flaky, and where a moved site went. That makes the wiki's own `sitemap.json` a feed, and the plugin fetches it daily (conditional GET, `similarity.json` `verdicts` to point elsewhere or switch it off, `WIKI_VERDICTS` likewise). `site-rank` then drops dead and lapsed sites from every batch, searches a moved site's destination in its place, and sinks unreliable and flaky sites by `WEIGHT reliable` (default 0.3); the Search Algorithm page gains that weight and `TRUST solid|flaky|any`. `similarity-health.json` reports the feed and how many verdicts it holds. The plan is the [https://plan.ide.earth/view/dead-sites-plan Dead Sites Plan]."
     },
     {
       "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.20.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.20.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
@@ -412,6 +412,26 @@
         "text": "**Version:** 0.20.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
       },
       "date": 1788518114936
+    },
+    {
+      "type": "edit",
+      "id": "df7785a66e945d29",
+      "item": {
+        "type": "markdown",
+        "id": "df7785a66e945d29",
+        "text": "0.20.1 reads the **Semantic Site Graveyard**. [https://dead.fedwiki.club/view/welcome-visitors dead.fedwiki.club] is a wiki Marvin writes nightly from the galaxy registry's probe record: one page per site that is not solid, its first sentence the verdict \u2014 dead, moved, lapsed, unreliable or flaky, and where a moved site went. That makes the wiki's own `sitemap.json` a feed, and the plugin fetches it daily (conditional GET, `similarity.json` `verdicts` to point elsewhere or switch it off, `WIKI_VERDICTS` likewise). `site-rank` then drops dead and lapsed sites from every batch, searches a moved site's destination in its place, and sinks unreliable and flaky sites by `WEIGHT reliable` (default 0.3); the Search Algorithm page gains that weight and `TRUST solid|flaky|any`. `similarity-health.json` reports the feed and how many verdicts it holds. The plan is the [https://plan.ide.earth/view/dead-sites-plan Dead Sites Plan]."
+      },
+      "date": 1788521525456
+    },
+    {
+      "type": "edit",
+      "id": "21eb5354d2adb29e",
+      "item": {
+        "type": "markdown",
+        "id": "21eb5354d2adb29e",
+        "text": "**Version:** 0.20.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      },
+      "date": 1788521525456
     }
   ]
 }
