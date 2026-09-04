@@ -113,8 +113,13 @@
     },
     {
       "type": "markdown",
+      "id": "29afd97b8246eb6e",
+      "text": "0.20.2 follows a moved site. A result whose site the graveyard calls dead, lapsed or moved is rewritten to where the site went when that site holds the same page, and labelled *site dead, probably moved to \u2026* otherwise \u2014 on both the page and the flat report \u2014 so a reader who searches with `TRUST any`, or a stale peer's answer, still lands on a living page. Batched results show *moved here from \u2026*."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.20.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.20.2\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
@@ -432,6 +437,27 @@
         "text": "**Version:** 0.20.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
       },
       "date": 1788521525456
+    },
+    {
+      "type": "add",
+      "id": "29afd97b8246eb6e",
+      "item": {
+        "type": "markdown",
+        "id": "29afd97b8246eb6e",
+        "text": "0.20.2 follows a moved site. A result whose site the graveyard calls dead, lapsed or moved is rewritten to where the site went when that site holds the same page, and labelled *site dead, probably moved to \u2026* otherwise \u2014 on both the page and the flat report \u2014 so a reader who searches with `TRUST any`, or a stale peer's answer, still lands on a living page. Batched results show *moved here from \u2026*."
+      },
+      "after": null,
+      "date": 1788524018425
+    },
+    {
+      "type": "edit",
+      "id": "21eb5354d2adb29e",
+      "item": {
+        "type": "markdown",
+        "id": "21eb5354d2adb29e",
+        "text": "**Version:** 0.20.2\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      },
+      "date": 1788524018425
     }
   ]
 }

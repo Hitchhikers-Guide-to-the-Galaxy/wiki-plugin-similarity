@@ -550,7 +550,9 @@ export const bind = (div, item) => {
         const tier = `<small class="sim-tier">semantic · nearest sites first${via.length ? ` · off-farm sites answered by ${via.join(', ')}` : ''}</small>`
         results.innerHTML = `<h3>${head}</h3>${tier}<ul>${
           shown.map(r => `<li>${simLink(r.site, r.slug, r.title, r.semantic)}` +
-            (r.siblings?.length ? ` <small>+${r.siblings.length}</small>` : '') + '</li>').join('')
+            (r.siblings?.length ? ` <small>+${r.siblings.length}</small>` : '') +
+            (r.movedFrom ? ` <small>moved here from ${r.movedFrom}</small>` : '') +
+            (r.gone ? ` <small>site ${r.gone}${r.movedTo ? `, probably now ${r.movedTo}` : ''}</small>` : '') + '</li>').join('')
         }</ul><p class="sim-count sim-batch-controls">` +
           (state.running ? `<button class="sim-stop">Stop</button>` : '') +
           (!state.running && rest > 0 ? `<button class="sim-more">Search the remaining ${rest.toLocaleString()} sites</button>` : '') +

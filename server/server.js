@@ -75,6 +75,8 @@ const { buildReport, buildReportFlat, seedVector } = require('./search-report')
 const { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, noteWanted,
         loadVerdicts, refreshVerdicts, verdictStats } = require('./site-index')
 const { rankSites, batches } = require('./site-rank')
+const { followMoves, followMovesOnPage } = require('./moved')
+const { loadVectorsCached } = require('./vector-store')
 const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
@@ -270,6 +272,13 @@ const startServer = ({ argv, app }) => {
   const restricted = loadRestricted(EXTRA_FARMS,
     { wikiDomains: argv.wikiDomains, globs: RESTRICTED_GLOBS })
   const ctx = { farms, restricted, embed: embedText }
+  // Does a site this farm holds vectors for carry a page with this slug?
+  // Used to follow a moved site to its living twin (moved.js).
+  const hasSlug = (domain, slug) => {
+    const file = findInFarms(farms, domain, 'status/semantic-vectors.json')
+    return !!file && loadVectorsCached(path.dirname(path.dirname(file)).replace(/\/[^/]+$/, ''), domain)
+      .some(p => p.slug === slug)
+  }
   // Pay the vector parse once, now, off the request path — and only once per
   // process however many sites' startServer calls arrive (vector-store.js).
   // The Site Index: this host's own galaxy tree carries one; a farm without
@@ -551,11 +560,13 @@ const startServer = ({ argv, app }) => {
             flat.stats.peerError = `${peerHost}: ${e.message}`
           }
         }
+        followMoves(flat.results, loadVerdicts(), hasSlug)
         return res.json(flat)
       }
       const page = await buildReport(
         body.query, domains, body.limit || 10, ctxFor(req),
         body.threshold ?? null, !!body.live, seedOptsFrom(body))
+      followMovesOnPage(page, loadVerdicts(), hasSlug)
       if (Array.isArray(body.farms) && body.farms.length) {
         const envelope = {
           query: body.query, kind: 'report', limit: body.limit || 10,
