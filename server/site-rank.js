@@ -102,6 +102,7 @@ const rankSites = (qvec, index, local, prefer = {}, algorithm = {}, verdicts = {
     out.push({
       domain: r.domain, kind: r.kind, method: m.method || 'pages', tier: m.tier || '',
       pages: m.pages || 0, indexedAt: m.indexedAt || 0, source: m.source || r.kind,
+      ...(m.peer ? { placedBy: m.peer } : {}),
       centroid: Number(centroid.toFixed(4)), preferred: prefScore > 0,
       score: Number(score.toFixed(4)), reason: reasons.join('+') || 'centroid',
       ...(v ? { verdict: v.class } : {}),

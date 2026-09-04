@@ -75,6 +75,7 @@ const { buildReport, buildReportFlat, seedVector } = require('./search-report')
 const { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, noteWanted,
         loadVerdicts, refreshVerdicts, verdictStats } = require('./site-index')
 const { rankSites, batches } = require('./site-rank')
+const { askCascade, MAX_HOPS } = require('./cascade')
 const { followMoves, followMovesOnPage } = require('./moved')
 const { loadVectorsCached } = require('./vector-store')
 const { buildSiteReport } = require('./site-report')
@@ -526,7 +527,7 @@ const startServer = ({ argv, app }) => {
           domains = listDomains(farms, domains, restricted)
             .map(d => d.domain)
             .filter(d => owned.has(d))
-          if (!domains.length) domains = [' none']   // match nothing, not everything
+          if (!domains.length) domains = ['\u0000none']   // match nothing, not everything
         }
       }
 
@@ -536,30 +537,30 @@ const startServer = ({ argv, app }) => {
         const flat = await buildReportFlat(
           body.query, domains, body.limit || 10, ctxFor(req),
           body.threshold ?? null, seedOptsFrom(body))
-        // The cascade: explicit domains this farm holds no vectors for are
-        // asked of the nearest peer that may — the same body, only the
-        // missing domains — and its results merge in, marked by source.
+        // The cascade (cascade.js): explicit domains this farm holds no
+        // vectors for are asked of its peers in order, each getting only what
+        // is still missing; results merge in marked `via` the host that had
+        // them. `held` tells the farm that asked us what we answered for, so
+        // its own walk can go on with the rest.
         const explicit = domains.filter(d => !['*', 'PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(d.toUpperCase()) && !/[*?]/.test(d))
         const held = new Set(listDomains(farms, explicit, restricted, 'status/semantic-vectors.json').map(d => d.domain))
         const missing = explicit.filter(d => !held.has(d))
-        const peerList = peers()
-        if (missing.length && peerList.length && !body.noPeers) {
-          const peerHost = new URL(peerList[0]).host
-          try {
-            const ans = await postToPeer(peerHost, '/system/search-report.json',
-              { ...body, domains: missing, noPeers: true, farms: undefined }, 20_000)
-            if (ans.status === 200 && Array.isArray(ans.body.results)) {
-              for (const r of ans.body.results) flat.results.push({ ...r, via: peerHost })
-              flat.results.sort((a, b) => b.score - a.score)
-              flat.results = flat.results.slice(0, body.limit || 10)
-              flat.stats.domains += (ans.body.stats && ans.body.stats.domains) || 0
-              flat.stats.pages += (ans.body.stats && ans.body.stats.pages) || 0
-              flat.stats.peer = peerHost
-            }
-          } catch (e) {
-            flat.stats.peerError = `${peerHost}: ${e.message}`
-          }
+        const hops = Number.isFinite(+body.hops) ? +body.hops : (body.noPeers ? MAX_HOPS : 0)
+        const via = [...(Array.isArray(body.via) ? body.via : []), req.hostname].filter(Boolean)
+        const walk = await askCascade({ peers: peers(), missing, body, hops, via, post: postToPeer })
+        if (walk.results.length) {
+          flat.results.push(...walk.results)
+          flat.results.sort((a, b) => b.score - a.score)
+          flat.results = flat.results.slice(0, body.limit || 10)
         }
+        for (const pr of walk.peers) {
+          flat.stats.domains += pr.domains
+          flat.stats.pages += pr.pages
+        }
+        if (walk.peers.length) flat.stats.peer = walk.peers[0].host
+        if (walk.errors.length) flat.stats.peerError = walk.errors.join('; ')
+        flat.peers = walk.peers
+        flat.held = explicit.filter(d => held.has(d) || !walk.missing.includes(d))
         followMoves(flat.results, loadVerdicts(), hasSlug)
         return res.json(flat)
       }

@@ -55,6 +55,10 @@ const simLink = (domain, slug, title, score) =>
   `<a class="sim-link" data-title="${title}" data-slug="${slug}" data-site="${domain}" href="#">` +
   `${siteFlag(domain, score)} ${title}</a>`
 
+const shortDate = ms => {
+  try { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) } catch { return '' }
+}
+
 // A merged batch result as a page, the same shape search-report renders.
 const flatPage = (query, merged) => {
   const id = () => Math.random().toString(16).slice(2, 18).padEnd(16, '0')
@@ -65,7 +69,7 @@ const flatPage = (query, merged) => {
   story.push({ type: 'markdown', id: id(), text: '# Results' })
   for (const r of merged) {
     story.push({ type: 'reference', id: id(), site: r.site, slug: r.slug, title: r.title,
-      text: r.synopsis || `score ${r.score}` })
+      text: (r.synopsis || `score ${r.score}`) + (r.via ? ` — via ${r.via}` : '') })
   }
   return { title: `${query} Federated Search`, story }
 }
@@ -546,10 +550,23 @@ export const bind = (div, item) => {
             : `Searched ${state.searched.toLocaleString()} of ${state.total.toLocaleString()} sites — ` +
               `${merged.length} results`
         const rest = state.total - state.searched
-        const via = [...new Set(merged.map(r => r.via).filter(Boolean))]
-        const tier = `<small class="sim-tier">semantic · nearest sites first${via.length ? ` · off-farm sites answered by ${via.join(', ')}` : ''}</small>`
+        // Which indexer answered, and how old its index is (Mini Indexer
+        // Plan, Phase 4): the batches say who held each site, the Site Index
+        // says when each site was last indexed and which indexer placed it.
+        const answered = Object.entries(state.answered || {})
+          .filter(([, n]) => n > 0)
+          .map(([h, n]) => `${h === 'local' ? 'this farm' : h} (${n.toLocaleString()} site${n === 1 ? '' : 's'})`)
+        const built = state.siteIndex?.builtAt ? ` · site index built ${shortDate(state.siteIndex.builtAt)}` : ''
+        const tier = `<small class="sim-tier">semantic · nearest sites first${answered.length ? ` · answered by ${answered.join(', ')}` : ''}${built}</small>`
+        const provenance = r => {
+          const info = state.siteInfo?.get(r.site)
+          const bits = []
+          if (r.via) bits.push(`via ${r.via}`)
+          if (info?.indexedAt) bits.push(`indexed ${shortDate(info.indexedAt * 1000)}${info.placedBy ? ` by ${info.placedBy}` : ''}`)
+          return bits.length ? ` <small class="sim-src">${bits.join(' · ')}</small>` : ''
+        }
         results.innerHTML = `<h3>${head}</h3>${tier}<ul>${
-          shown.map(r => `<li>${simLink(r.site, r.slug, r.title, r.semantic)}` +
+          shown.map(r => `<li>${simLink(r.site, r.slug, r.title, r.semantic)}` + provenance(r) +
             (r.siblings?.length ? ` <small>+${r.siblings.length}</small>` : '') +
             (r.movedFrom ? ` <small>moved here from ${r.movedFrom}</small>` : '') +
             (r.gone ? ` <small>site ${r.gone}${r.movedTo ? `, probably now ${r.movedTo}` : ''}</small>` : '') + '</li>').join('')

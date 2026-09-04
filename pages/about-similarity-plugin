@@ -120,6 +120,11 @@
       "type": "markdown",
       "id": "21eb5354d2adb29e",
       "text": "**Version:** 0.20.2\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+    },
+    {
+      "type": "markdown",
+      "id": "e2cde2572a99224e",
+      "text": "**0.21.0** \u2014 the cascade beyond the first peer (Mini Indexer Plan, Phase 4). A flat report's missing domains walk the farm's peers **in order**, each asked only for what is still missing; a peer's answer says which domains it `held`, so the walk moves on with the rest, two hops at most and never back to a host already in the chain. The Cafe names only the Pi5; the Pi5 names the mini after itself; a page only the mini indexed is answered from any Cafe site, marked `via` the host that had it. The result page names who answered \u2014 this farm and each peer, by sites \u2014 when each result's site was last indexed and which indexer placed it, and how old the Site Index is."
     }
   ],
   "plugin": "similarity",
@@ -458,6 +463,17 @@
         "text": "**Version:** 0.20.2\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
       },
       "date": 1788524018425
+    },
+    {
+      "type": "add",
+      "id": "e2cde2572a99224e",
+      "item": {
+        "type": "markdown",
+        "id": "e2cde2572a99224e",
+        "text": "**0.21.0** \u2014 the cascade beyond the first peer (Mini Indexer Plan, Phase 4). A flat report's missing domains walk the farm's peers **in order**, each asked only for what is still missing; a peer's answer says which domains it `held`, so the walk moves on with the rest, two hops at most and never back to a host already in the chain. The Cafe names only the Pi5; the Pi5 names the mini after itself; a page only the mini indexed is answered from any Cafe site, marked `via` the host that had it. The result page names who answered \u2014 this farm and each peer, by sites \u2014 when each result's site was last indexed and which indexer placed it, and how old the Site Index is."
+      },
+      "after": "21eb5354d2adb29e",
+      "date": 1788545199179
     }
   ]
 }

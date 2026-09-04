@@ -66,7 +66,11 @@ const runBatched = async opts => {
   const batches = rank.batches || []
   const total = rank.count || batches.reduce((n, b) => n + b.length, 0)
   const state = { searched: 0, total, batches: batches.length, done: 0, stopped: false,
-                  converged: false, running: true, unindexed: rank.unindexed || [] }
+                  converged: false, running: true, unindexed: rank.unindexed || [],
+                  // who answered: this farm and each peer, by sites searched
+                  answered: { local: 0 }, siteIndex: rank.siteIndex || null,
+                  // what the Site Index says of each site: when it was indexed, by whom
+                  siteInfo: new Map((rank.sites || []).map(r => [r.domain, r])) }
 
   const merged = new Map()
   let results = []
@@ -83,6 +87,12 @@ const runBatched = async opts => {
       const prev = merged.get(key)
       if (!prev || prev.score < r.score) merged.set(key, r)
     }
+    let peerDomains = 0
+    for (const p of flat.peers || []) {
+      state.answered[p.host] = (state.answered[p.host] || 0) + (p.domains || 0)
+      peerDomains += p.domains || 0
+    }
+    state.answered.local += Math.max(0, ((flat.stats && flat.stats.domains) || 0) - peerDomains)
     const next = [...merged.values()].sort((a, b) => b.score - a.score)
     const unchanged = sameTop(results, next, limit)
     results = next
