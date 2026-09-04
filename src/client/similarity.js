@@ -59,6 +59,19 @@ const shortDate = ms => {
   try { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) } catch { return '' }
 }
 
+// The graveyard's verdicts as this farm last read them from the graveyard
+// wiki's sitemap (Dead Sites Plan): one request, every verdict.
+const verdictRow = v => {
+  if (!v || !v.feed) return ''
+  const by = v.by || {}
+  const order = ['abandoned', 'stale', 'dead', 'moved', 'lapsed', 'unreliable', 'flaky']
+  const parts = order.filter(k => by[k]).map(k => `${by[k].toLocaleString()} ${k}`)
+  const feedHost = String(v.feed).replace(/^https?:\/\//, '')
+  const when = v.fetchedAt ? new Date(v.fetchedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
+  const what = v.sites ? `${v.sites.toLocaleString()} sites${parts.length ? ` — ${parts.join(', ')}` : ''}` : 'none yet'
+  return `<tr><th>Graveyard verdicts</th><td>${what} — read from <code>${feedHost}</code>'s sitemap, ${when}</td></tr>`
+}
+
 // A merged batch result as a page, the same shape search-report renders.
 const flatPage = (query, merged) => {
   const id = () => Math.random().toString(16).slice(2, 18).padEnd(16, '0')
@@ -284,6 +297,7 @@ export const bind = (div, item) => {
             <tr><th>Oldest page vectors</th><td>${day(built[0])} (${ago(built[0])})</td></tr>
             <tr><th>Plugin</th><td>wiki-plugin-similarity ${health.version || '—'}</td></tr>
             ${storeRow(health.store)}
+            ${verdictRow(health.verdicts)}
           </table>
           <p class="sim-count">A domain's vectors are only rebuilt when its pages change, so an old
              date means a quiet site, not a broken one. Pages saved since the last build are findable
