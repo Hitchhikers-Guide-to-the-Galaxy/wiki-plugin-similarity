@@ -103,8 +103,13 @@
     },
     {
       "type": "markdown",
+      "id": "d3a90f5b71c26e48",
+      "text": "0.20.0 answers **SITES over GALAXY** by the stored site vector first. Asking which site a page belongs on used to read every page vector of every federation site \u2014 104,000 of them to rank a few hundred things. The Site Index has one vector per site, so the field is narrowed to the 250 closest by centroid before any page is read, and only those are read in full for the evidence a placement answer shows. Measured on the Pi5: 971 sites considered, 250 read, 104,425 pages down to 72,910, and 2.7 s down to **0.49 s**, with the top five identical to the full scan.\n\nThe ranking here is centroid **only**. `rankSites` normally carries the reader's preferences \u2014 followed tier, rosters, learned scores \u2014 which is right for choosing what to search first for a person and wrong for placement: with them on, a followed-tier bonus pushed the second-best site out of the field and pulled in one ranked #108. Farm scope is left scanning everything: it is ours, it is bounded, and a diluted centroid should not hide a site you own."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.19.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.20.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",

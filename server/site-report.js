@@ -24,6 +24,8 @@ const path   = require('node:path')
 const crypto = require('node:crypto')
 
 const { listDomains } = require('./farm-lib')
+const { loadSiteIndex } = require('./site-index')
+const { rankSites: rankByCentroid } = require('./site-rank')
 const { loadVectors, dot, seedVector } = require('./search-report')
 
 const SITE_TOP_K          = 5     // neighbourhood size
@@ -32,6 +34,23 @@ const SITE_CENTROID_WEIGHT = 0.3
 const SITE_FLOOR          = 0.50  // sites whose topK falls below → dropped
 const HIT_THRESHOLD       = 0.55  // evidence count, matches search-report's floor
 const TOP_PAGES_SHOWN     = 3
+
+// Resource selection for the federation. Answering "which SITE" by reading
+// every page vector of every site means 104,000 reads to rank a few hundred
+// things — and beyond our own farm those are other people's wikis (see the
+// Polite Index Plan). With the Site Index there is one stored vector per site,
+// so the field can be narrowed before any page is touched. Only the strongest
+// sites are then read in full, because the evidence a placement answer shows —
+// topK, hits, the pages themselves — still needs real pages.
+//
+// Farm scope is left alone: it is ours, it is bounded, and a diluted centroid
+// on a broad person-pod should not hide a site we own.
+const PRESELECT_MIN_DOMAINS = 120  // below this, scanning everything is cheap
+// Wide enough that a site whose pages answer well is not lost because its
+// centroid is diluted: on the pattern-language query the true top five sat at
+// centroid ranks 1, 3, 26, 104 and 108, so a narrow field would have dropped
+// two of them. 250 of 1,385 keeps the answer and still skips three quarters.
+const PRESELECT_KEEP        = 250  // sites read in full afterwards
 
 const makeId = () => crypto.randomBytes(8).toString('hex')
 
@@ -150,6 +169,35 @@ const buildSiteReport = async (query, specs, limit,
   if (exclude) domains = domains.filter(d => !exclude.has(d.domain))
   const qvec = await seedVector(seedOpts, query, farms, embed)
 
+  // Narrow by stored site vector before reading any pages.
+  const reachesGalaxy = useSpecs.some(s2 => String(s2).toUpperCase() === 'GALAXY')
+  let considered = null
+  if (reachesGalaxy && domains.length > PRESELECT_MIN_DOMAINS) {
+    // farms is [[rootPath, kind], …]; the galaxy tree is the one kind 'galaxy'.
+    const galaxyDir = (farms.find(([, kind]) => kind === 'galaxy') || [])[0] || null
+    const index = loadSiteIndex(galaxyDir)
+    if (index) {
+      // Centroid alone. rankSites also carries the reader's preferences — the
+      // followed tier, rosters, learned scores — which is right for deciding
+      // what to search first for a person, and wrong here: "which site should
+      // this page live on" is not a question about whose wikis you like. Left
+      // personalised, a followed-tier bonus of 0.2 swamped centroid gaps and
+      // pushed the second-best site (0.890) out of the field while pulling in
+      // one ranked #108. Weights zeroed so only topical fit orders the field.
+      const OBJECTIVE = { weights: { liked: 0, visited: 0, neighbourhood: 0,
+                                     followed: 0, centroid: 1, fresh: 0 } }
+      const order = new Map(
+        rankByCentroid(qvec, index, [], {}, OBJECTIVE).map((r, i) => [r.domain, i]))
+      const known = domains.filter(d => order.has(d.domain))
+      // A site the index has not caught up with is not silently dropped; it
+      // keeps its place behind the ranked ones rather than losing its turn.
+      const unknown = domains.filter(d => !order.has(d.domain))
+      known.sort((a, b) => order.get(a.domain) - order.get(b.domain))
+      considered = domains.length
+      domains = known.concat(unknown).slice(0, PRESELECT_KEEP)
+    }
+  }
+
   const ex = seedOpts.excludePage
   let totalPages = 0
   const entries = domains.map(({ farm, domain }) => {
@@ -174,6 +222,8 @@ const buildSiteReport = async (query, specs, limit,
   }))
 
   const stats = { domains: domains.length, pages: totalPages, above_floor: ranked.length }
+  // Say so when most of the field was judged on its site vector alone.
+  if (considered !== null) { stats.considered = considered; stats.preselected = true }
   if (format === 'flat') return { query, scanned: stats, sites }
   return siteReportPage(query, sites, stats, limit, useSpecs)
 }
