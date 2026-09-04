@@ -17,15 +17,18 @@
 //   ALWAYS ward.bay.wiki.org  pinned into the first batch
 //   NEVER  spam.example       pruned from every batch
 //   BATCH 50                  sites searched per request
+//   WEIGHT reliable 0.3       how far an unreliable site sinks (Dead Sites Plan)
+//   TRUST solid|flaky|any     solid: skip shaky sites; flaky: search them later
+//                             (default); any: even dead and moved sites
 //
 // Unknown words are ignored, so the vocabulary can grow release by release.
 
 const LEARNED_KEY = 'similarity:learned'
-const WEIGHT_NAMES = new Set(['liked', 'visited', 'neighbourhood', 'neighborhood', 'followed', 'centroid', 'fresh'])
+const WEIGHT_NAMES = new Set(['liked', 'visited', 'neighbourhood', 'neighborhood', 'followed', 'centroid', 'fresh', 'reliable'])
 const SITE = /^([a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+|localhost)(:\d+)?$/
 
 const parseAlgorithm = text => {
-  const out = { weights: {}, always: [], never: [], batch: null }
+  const out = { weights: {}, always: [], never: [], batch: null, trust: null }
   for (const raw of (text || '').split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
@@ -38,6 +41,7 @@ const parseAlgorithm = text => {
     } else if (kw === 'ALWAYS' && rest[0] && SITE.test(rest[0])) out.always.push(rest[0].toLowerCase())
     else if (kw === 'NEVER' && rest[0] && SITE.test(rest[0])) out.never.push(rest[0].toLowerCase())
     else if (kw === 'BATCH' && rest[0]) out.batch = parseInt(rest[0]) || null
+    else if (kw === 'TRUST' && rest[0] && ['solid', 'flaky', 'any'].includes(rest[0].toLowerCase())) out.trust = rest[0].toLowerCase()
   }
   return out
 }
@@ -82,7 +86,7 @@ const loadAlgorithm = async (ref, origin) => {
   const url = refToUrl(ref, origin)
   let algo = cache.get(url)
   if (!algo) {
-    algo = { weights: {}, always: [], never: [], liked: [], batch: null, page: null }
+    algo = { weights: {}, always: [], never: [], liked: [], batch: null, trust: null, page: null }
     try {
       const res = await fetch(url)
       if (res.ok) {

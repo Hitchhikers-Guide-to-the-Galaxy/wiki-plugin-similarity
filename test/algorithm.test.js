@@ -12,7 +12,9 @@ describe('parseAlgorithm', () => {
     assert.equal(a.batch, 25)
   })
   it('an empty item means defaults', () => {
-    assert.deepEqual(parseAlgorithm('ALGORITHM'), { weights: {}, always: [], never: [], batch: null })
+    assert.deepEqual(parseAlgorithm('ALGORITHM'), { weights: {}, always: [], never: [], batch: null, trust: null })
+    assert.equal(parseAlgorithm('ALGORITHM\nTRUST any').trust, 'any')
+    assert.equal(parseAlgorithm('ALGORITHM\nWEIGHT reliable 0.9').weights.reliable, 0.9)
   })
 })
 

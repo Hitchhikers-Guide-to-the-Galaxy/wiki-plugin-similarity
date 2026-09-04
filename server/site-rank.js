@@ -20,8 +20,13 @@
 
 const DEFAULT_WEIGHTS = {
   liked: 1.0, visited: 0.6, neighbourhood: 0.4, followed: 0.2,
-  centroid: 1.0, fresh: 0.2,
+  centroid: 1.0, fresh: 0.2, reliable: 0.3,
 }
+// How a verdict from the Semantic Site Graveyard moves a site (Dead Sites
+// Plan): dead, lapsed and moved sites leave the list — a moved site is
+// replaced by where it went when that is known — unless the reader's
+// algorithm says TRUST any; unreliable and flaky sink by `reliable`.
+const VERDICT_PENALTY = { unreliable: 1.0, flaky: 0.5 }
 const KIND_FRESHNESS = { local: 1.0, public: 1.0, own: 1.0, farm: 0.8, peer: 0.6, galaxy: 0.4 }
 
 const dot = (a, b) => {
@@ -41,9 +46,10 @@ const norm = v => {
 // local: localSites() result; prefer: {roster: [], neighborhood: [], followed: bool};
 // algorithm: see above. Returns [{domain, kind, method, tier, pages, indexedAt,
 // source, centroid, score, reason}] best first, `never` sites removed.
-const rankSites = (qvec, index, local, prefer = {}, algorithm = {}) => {
+const rankSites = (qvec, index, local, prefer = {}, algorithm = {}, verdicts = {}) => {
   const q = norm(qvec)
   const w = { ...DEFAULT_WEIGHTS, ...(algorithm.weights || {}) }
+  const trust = String(algorithm.trust || 'flaky').toLowerCase()   // solid | flaky | any
   const never = new Set((algorithm.never || []).map(d => d.toLowerCase()))
   const always = new Set((algorithm.always || []).map(d => d.toLowerCase()))
   const learned = algorithm.learned || {}
@@ -55,6 +61,14 @@ const rankSites = (qvec, index, local, prefer = {}, algorithm = {}) => {
   const consider = (domain, kind, meta, vector) => {
     const d = domain.toLowerCase()
     if (never.has(d)) return
+    const v = verdicts[d]
+    if (v && trust !== 'any') {
+      if (v.class === 'dead' || v.class === 'lapsed' || v.class === 'moved') {
+        if (v.to && !verdicts[v.to]) rows.set(`moved:${d}`, { movedFrom: d, to: v.to })
+        return
+      }
+      if (trust === 'solid' && (v.class === 'unreliable' || v.class === 'flaky')) return
+    }
     const fresh = KIND_FRESHNESS[kind] ?? 0.4
     const prev = rows.get(d)
     if (prev && prev.fresh >= fresh) return
@@ -69,7 +83,9 @@ const rankSites = (qvec, index, local, prefer = {}, algorithm = {}) => {
   for (const s of local || []) consider(s.domain, 'own', s, s.vector)
 
   const out = []
+  const moved = []
   for (const [d, r] of rows) {
+    if (r.movedFrom) { moved.push(r); continue }
     const centroid = dot(q, r.vector)
     const m = r.meta || {}
     const reasons = []
@@ -79,13 +95,22 @@ const rankSites = (qvec, index, local, prefer = {}, algorithm = {}) => {
     if (near.has(d))            { prefScore += w.neighbourhood; reasons.push('neighbourhood') }
     if (wantFollowed && m.tier === 'followed') { prefScore += w.followed; reasons.push('followed') }
     if (learned[d] > 0)         { prefScore += w.visited * Math.min(1, learned[d]); reasons.push('learned') }
-    const score = prefScore + w.centroid * centroid + w.fresh * r.fresh
+    const v = verdicts[d]
+    const penalty = v ? (VERDICT_PENALTY[v.class] || 0) : 0
+    if (penalty) reasons.push(v.class)
+    const score = prefScore + w.centroid * centroid + w.fresh * r.fresh - w.reliable * penalty
     out.push({
       domain: r.domain, kind: r.kind, method: m.method || 'pages', tier: m.tier || '',
       pages: m.pages || 0, indexedAt: m.indexedAt || 0, source: m.source || r.kind,
       centroid: Number(centroid.toFixed(4)), preferred: prefScore > 0,
       score: Number(score.toFixed(4)), reason: reasons.join('+') || 'centroid',
+      ...(v ? { verdict: v.class } : {}),
     })
+  }
+  // A moved site's destination is searched in its place, marked so
+  for (const mv of moved) {
+    const row = out.find(r => r.domain.toLowerCase() === mv.to)
+    if (row) row.movedFrom = mv.movedFrom
   }
   out.sort((a, b) => b.score - a.score || (b.pages || 0) - (a.pages || 0) ||
     a.domain.localeCompare(b.domain))
@@ -104,4 +129,4 @@ const batches = (ranked, size = 50) => {
   return out
 }
 
-module.exports = { rankSites, batches, DEFAULT_WEIGHTS, KIND_FRESHNESS }
+module.exports = { rankSites, batches, DEFAULT_WEIGHTS, KIND_FRESHNESS, VERDICT_PENALTY }

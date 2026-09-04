@@ -140,6 +140,85 @@ const localSites = (farms, restricted, exclude) => {
   return out
 }
 
+// ── Verdicts: the Semantic Site Graveyard's sitemap as a feed ───────────────
+// dead.fedwiki.club (Dead Sites Plan) carries one page per site that is not
+// solid, and that page's first sentence is its verdict — so the wiki's own
+// sitemap.json, one request, says which sites are dead, moved, lapsed,
+// unreliable or flaky, and where a moved site went. Parsed here into
+// {domain: {class, to}} from the synopsis of every entry, refreshed daily by
+// conditional GET into the plugin's cache dir. A site with no page is solid.
+//
+//   example.wiki is dead: http 404 since …; probably moved to other.wiki.
+//   example.wiki has moved: it now answers from other.wiki; …
+//   example.wiki has lapsed: …    example.wiki is unreliable: …    … is flaky: …
+
+const VERDICT_TTL_MS = parseInt(process.env.WIKI_VERDICT_TTL_MS || String(24 * 3600 * 1000), 10)
+const verdictCopy = () => path.join(cacheDir(), 'verdicts-sitemap.json')
+const VERDICT_RE = /^(\S+) (?:is|has) (dead|moved|lapsed|unreliable|flaky)\b(.*)$/i
+const TARGET_RE = /(?:probably moved to|now answers from) ([a-z0-9.-]+(?::\d+)?)/i
+
+const parseVerdicts = sitemap => {
+  const out = {}
+  for (const e of Array.isArray(sitemap) ? sitemap : []) {
+    const m = VERDICT_RE.exec(((e && e.synopsis) || '').trim())
+    if (!m) continue
+    const t = TARGET_RE.exec(m[3] || '')
+    // the sentence ends with a full stop the domain pattern would swallow
+    out[m[1].toLowerCase()] = { class: m[2].toLowerCase(), to: t ? t[1].toLowerCase().replace(/\.+$/, '') : null, slug: e.slug }
+  }
+  return out
+}
+
+let verdictsLoaded = null   // {mtimeMs, verdicts}
+const loadVerdicts = () => {
+  const file = verdictCopy()
+  let stat
+  try { stat = fs.statSync(file) } catch { return {} }
+  if (verdictsLoaded && verdictsLoaded.mtimeMs === stat.mtimeMs) return verdictsLoaded.verdicts
+  let verdicts = {}
+  try { verdicts = parseVerdicts(JSON.parse(fs.readFileSync(file, 'utf8'))) } catch { /* unreadable copy */ }
+  verdictsLoaded = { mtimeMs: stat.mtimeMs, verdicts }
+  return verdicts
+}
+
+let refreshingVerdicts = null
+const refreshVerdicts = async feedUrl => {
+  if (!feedUrl) return null
+  if (refreshingVerdicts) return refreshingVerdicts
+  refreshingVerdicts = (async () => {
+    const copy = verdictCopy()
+    let age = Infinity, since = null
+    try { const st = fs.statSync(copy); age = Date.now() - st.mtimeMs; since = st.mtime.toUTCString() } catch { /* none */ }
+    if (age < VERDICT_TTL_MS) return copy
+    try {
+      const url = feedUrl.replace(/\/$/, '') + '/system/sitemap.json'
+      const res = await getJson(url, since ? { 'If-Modified-Since': since } : {})
+      if (res.status === 304) { fs.utimesSync(copy, new Date(), new Date()); return copy }
+      if (res.status !== 200) return null
+      const parsed = JSON.parse(res.body)
+      if (!Array.isArray(parsed)) return null
+      fs.mkdirSync(cacheDir(), { recursive: true })
+      fs.writeFileSync(copy + '.tmp', res.body)
+      fs.renameSync(copy + '.tmp', copy)
+      console.log(`[wiki-plugin-similarity] verdicts refreshed from ${feedUrl}: ${Object.keys(parseVerdicts(parsed)).length} sites`)
+      return copy
+    } catch (e) {
+      console.log(`[wiki-plugin-similarity] verdicts from ${feedUrl} failed: ${e.message}`)
+      return null
+    }
+  })().finally(() => { refreshingVerdicts = null })
+  return refreshingVerdicts
+}
+
+const verdictStats = () => {
+  const v = loadVerdicts()
+  const by = {}
+  for (const x of Object.values(v)) by[x.class] = (by[x.class] || 0) + 1
+  let at = null
+  try { at = fs.statSync(verdictCopy()).mtime.toISOString() } catch { /* none */ }
+  return { sites: Object.keys(v).length, by, fetchedAt: at }
+}
+
 // ── Demand log ──────────────────────────────────────────────────────────────
 // Sites that rank highly for real queries but carry no page vectors
 // (method: sitemap) are counted here; the galaxy scout reads the file and
@@ -175,4 +254,5 @@ const siteIndexStats = galaxyDir => {
            via: idx.file === peerCopy() ? 'peer' : 'galaxy' }
 }
 
-module.exports = { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, peerCopy, noteWanted, wantedFile }
+module.exports = { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, peerCopy, noteWanted, wantedFile,
+  parseVerdicts, loadVerdicts, refreshVerdicts, verdictStats }

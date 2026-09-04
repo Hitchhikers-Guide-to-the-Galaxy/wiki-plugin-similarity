@@ -72,7 +72,8 @@ const https  = require('node:https')
 const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm-lib')
 const embedder     = require('./embedder')
 const { buildReport, buildReportFlat, seedVector } = require('./search-report')
-const { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, noteWanted } = require('./site-index')
+const { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, noteWanted,
+        loadVerdicts, refreshVerdicts, verdictStats } = require('./site-index')
 const { rankSites, batches } = require('./site-rank')
 const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
@@ -207,9 +208,9 @@ let cfgCache = null // { mtimeMs, embedUrl, peers }
 const fileConfig = farmRoot => {
   const file = path.join(farmRoot, 'similarity.json')
   let stat
-  try { stat = fs.statSync(file) } catch { cfgCache = null; return { embedUrl: null, peers: [] } }
+  try { stat = fs.statSync(file) } catch { cfgCache = null; return { embedUrl: null, peers: [], verdicts: null } }
   if (cfgCache && cfgCache.mtimeMs === stat.mtimeMs) return cfgCache
-  let embedUrl = null, peers = []
+  let embedUrl = null, peers = [], verdicts = null
   try {
     const cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
     embedUrl = httpUrlOrNull(cfg.embedUrl)
@@ -217,11 +218,22 @@ const fileConfig = farmRoot => {
       console.log(`caution: ${file}: embedUrl is not an http(s) URL — ignoring it`)
     }
     peers = (Array.isArray(cfg.peers) ? cfg.peers : []).map(httpUrlOrNull).filter(Boolean)
+    // `verdicts`: the Semantic Site Graveyard wiki whose sitemap says which
+    // sites are dead, moved or unreliable (Dead Sites Plan); false switches
+    // it off; unset means the default graveyard.
+    verdicts = cfg.verdicts === false ? false : httpUrlOrNull(cfg.verdicts)
   } catch (e) {
     console.log(`caution: ${file}: ${e.message}`)
   }
-  cfgCache = { mtimeMs: stat.mtimeMs, embedUrl, peers }
+  cfgCache = { mtimeMs: stat.mtimeMs, embedUrl, peers, verdicts }
   return cfgCache
+}
+const DEFAULT_VERDICTS = 'https://dead.fedwiki.club'
+const verdictFeed = farmRoot => {
+  const env = process.env.WIKI_VERDICTS
+  if (env) return /^(off|none|0|false)$/i.test(env) ? null : httpUrlOrNull(env)
+  const v = fileConfig(farmRoot).verdicts
+  return v === false ? null : (v || DEFAULT_VERDICTS)
 }
 const fileEmbedUrl = farmRoot => fileConfig(farmRoot).embedUrl
 const filePeers = farmRoot => ENV_PEERS.length ? ENV_PEERS : fileConfig(farmRoot).peers
@@ -266,6 +278,10 @@ const startServer = ({ argv, app }) => {
   const refreshSiteIndex = () => refreshFromPeers(peers(), galaxyDir).catch(() => null)
   refreshSiteIndex()
   setInterval(refreshSiteIndex, 3600 * 1000).unref()
+  // The graveyard's verdicts, daily: which sites are dead, moved or shaky.
+  const refreshVerdictFeed = () => refreshVerdicts(verdictFeed(farmRoot)).catch(() => null)
+  refreshVerdictFeed()
+  setInterval(refreshVerdictFeed, 6 * 3600 * 1000).unref()
 
   warmUp(farms).then(w => {
     if (w.total) console.log(`[wiki-plugin-similarity] vector store warm: ` +
@@ -451,6 +467,7 @@ const startServer = ({ argv, app }) => {
       // leans on, in order.
       siteIndex: siteIndexStats(galaxyDir),
       peers: peers(),
+      verdicts: { feed: verdictFeed(farmRoot), ...verdictStats() },
       // The vector store: sites and pages resident, heap bytes against the
       // cap, how many files were parsed vs restored from the disk cache, and
       // the warm-up state — `warm.state` is 'warm' once every file in every
@@ -596,7 +613,7 @@ const startServer = ({ argv, app }) => {
       const qvec = await seedVector(seedOptsFrom(body), body.query || '', farms, embedText)
       const index = loadSiteIndex(galaxyDir)
       const local = localSites(farms, restricted, c.exclude)
-      let ranked = rankSites(qvec, index, local, body.prefer || {}, body.algorithm || {})
+      let ranked = rankSites(qvec, index, local, body.prefer || {}, body.algorithm || {}, loadVerdicts())
       const specs = (Array.isArray(body.domains) ? body.domains : body.domains ? [String(body.domains)] : [])
         .map(d => ['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(d.toUpperCase()) ? d.toUpperCase() : d)
       if (specs.length && !specs.every(sp => sp === '*' || sp === 'GALAXY')) {
