@@ -67,4 +67,6 @@ test('a nested answer keeps the host that really held the page', async () => {
   const out = await askCascade({ peers: ['https://a.example'], missing: ['x'], body: {}, post })
   assert.equal(out.results[0].via, 'deep.example')
   assert.deepEqual(out.peers.map(p => p.host), ['a.example', 'deep.example'])
+  // the site deep.example held is counted once, under deep.example
+  assert.deepEqual(out.peers.map(p => p.domains), [0, 1])
 })

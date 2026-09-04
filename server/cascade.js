@@ -42,9 +42,15 @@ const askCascade = async ({ peers, missing, body, hops = 0, via = [], post, time
         continue
       }
       for (const r of ans.body.results) out.results.push({ ...r, via: r.via || host })
+      // A peer's stats include what its own peers answered; count those
+      // under the host that really held them, not twice.
       const s = ans.body.stats || {}
-      out.peers.push({ host, domains: s.domains || 0, pages: s.pages || 0 })
-      for (const p of ans.body.peers || []) out.peers.push(p)   // what it asked in turn
+      const nested = ans.body.peers || []
+      const nestedDomains = nested.reduce((n, p) => n + (p.domains || 0), 0)
+      const nestedPages = nested.reduce((n, p) => n + (p.pages || 0), 0)
+      out.peers.push({ host, domains: Math.max(0, (s.domains || 0) - nestedDomains),
+                       pages: Math.max(0, (s.pages || 0) - nestedPages) })
+      for (const p of nested) out.peers.push(p)   // what it asked in turn
       // A peer that says what it held lets the walk go on with the rest; an
       // older peer that does not is taken to have answered for everything.
       const held = Array.isArray(ans.body.held) ? new Set(ans.body.held) : null
