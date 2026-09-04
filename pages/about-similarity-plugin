@@ -98,8 +98,13 @@
     },
     {
       "type": "markdown",
+      "id": "572d1df31653a684",
+      "text": "0.19.1 makes an explicit-domain batch cheap. A scope of fifty named domains was matched against every directory of a 1,400-site tree with the glob matcher, which builds a matrix per comparison \u2014 a second and a half per batch on the Pi5. A pattern with no wildcard is now compared by equality."
+    },
+    {
+      "type": "markdown",
       "id": "21eb5354d2adb29e",
-      "text": "**Version:** 0.19.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      "text": "**Version:** 0.19.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
     }
   ],
   "plugin": "similarity",
@@ -355,6 +360,27 @@
         "text": "**Version:** 0.19.0\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
       },
       "date": 1788507728115
+    },
+    {
+      "type": "add",
+      "id": "572d1df31653a684",
+      "item": {
+        "type": "markdown",
+        "id": "572d1df31653a684",
+        "text": "0.19.1 makes an explicit-domain batch cheap. A scope of fifty named domains was matched against every directory of a 1,400-site tree with the glob matcher, which builds a matrix per comparison \u2014 a second and a half per batch on the Pi5. A pattern with no wildcard is now compared by equality."
+      },
+      "after": null,
+      "date": 1788508975320
+    },
+    {
+      "type": "edit",
+      "id": "21eb5354d2adb29e",
+      "item": {
+        "type": "markdown",
+        "id": "21eb5354d2adb29e",
+        "text": "**Version:** 0.19.1\n\n# Links\n\n- [https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-similarity GitHub repository]\n- [https://www.npmjs.com/package/wiki-plugin-similarity npm package]\n- [https://plugin.fedwiki.club/similarity-plugin.html Plugin documentation]\n- [https://search.fedwiki.club/ Search hub] \u2014 architecture, indexing, freshness."
+      },
+      "date": 1788508975320
     }
   ]
 }

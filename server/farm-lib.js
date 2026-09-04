@@ -82,6 +82,11 @@ const loadRestricted = (publicFarms, opts = {}) => {
   return restricted
 }
 
+// An explicit domain is compared by equality: globMatch builds a p×s matrix
+// per call, and a fifty-domain batch against a 1,400-directory tree was
+// spending a second and a half on it (measured on the Pi5, 2026-09-04).
+const isGlobPattern = p => p.includes('*') || p.includes('?')
+
 const matchesAny = (domain, kind, patterns, restricted) =>
   patterns.some(p => {
     if (p === '*') return kind !== 'galaxy'
@@ -89,7 +94,7 @@ const matchesAny = (domain, kind, patterns, restricted) =>
     if (p === 'LOCAL') return kind === 'local'
     if (p === 'PRIVATE') return kind !== 'galaxy' && restricted.has(domain)
     if (p === 'GALAXY') return kind === 'galaxy'
-    return globMatch(p, domain)
+    return isGlobPattern(p) ? globMatch(p, domain) : p === domain
   })
 
 // ── Domain listing ────────────────────────────────────────────────────────────
