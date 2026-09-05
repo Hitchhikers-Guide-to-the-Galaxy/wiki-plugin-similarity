@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { keyOf, pendingAbove, foldIn, refreshShown, DEFAULT_BATCH } from '../src/client/batch.js'
+import { parseDSL } from '../src/client/dsl.js'
 
 const r = (site, slug, score) => ({ site, slug, score })
 
@@ -27,4 +28,12 @@ describe('keep your place (Personal Search Plan, Phase 1)', () => {
     assert.deepEqual(out.map(keyOf), ['n 1', 'n 2', 'c z'])
   })
   it('the default batch is a hundred sites', () => { assert.equal(DEFAULT_BATCH, 100) })
+})
+
+describe('AUTO (Like This Page)', () => {
+  it('parses AUTO beside SUBJECT and REPORT', () => {
+    const d = parseDSL('GALAXY\nREPORT\nSUBJECT\nAUTO\nBATCH 100\nLIMIT: 10')
+    assert.equal(d.auto, true); assert.equal(d.subject, true); assert.equal(d.mode, 'report'); assert.equal(d.batch, 100)
+    assert.equal(parseDSL('* REPORT').auto, false)
+  })
 })

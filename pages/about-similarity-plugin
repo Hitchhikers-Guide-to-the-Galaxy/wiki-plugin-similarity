@@ -143,6 +143,11 @@
     },
     {
       "type": "markdown",
+      "id": "b64b3b1cac49f7a4",
+      "text": "**0.24.0** \u2014 [[Like This Page]], in the \u2630 menu on every site: pages like the one you were reading, on this farm in one request and then across the federation, starting by itself. `AUTO` runs a report item as soon as it has a query \u2014 a `SUBJECT` title, say \u2014 with no button press. `SUBJECT` now walks back past tool pages (Selected Plugin Pages, Search Tool, this page) to the page the reader was actually on, so the menu door reads the right subject. The *like this page* item reports how long its one request took, and a batched item shows a progress bar while it runs."
+    },
+    {
+      "type": "markdown",
       "id": "ac44fae5937e27eb",
       "text": "**0.21.1** \u2014 three fixes from the first day of the second peer. A farm's copy of a peer's Site Index is checked **hourly** by conditional GET, and always once at startup, so a restart never serves a copy the peer has since rebuilt \u2014 it was six hours, and a 304 reset the clock, so a new indexer's sites could take most of a day to reach the Cafe. A domain named explicitly in a batched item is **searched whether or not the Site Index knows it**, as one more batch, since the cascade finds the peer that holds it. And a batched item's ready line reports how far the Site Index reaches rather than how many domains this host holds, which on a farm with no galaxy tree read as a misleading zero."
     },
@@ -554,6 +559,17 @@
       },
       "after": "07eec3cdb7b07eb2",
       "date": 1788568811895
+    },
+    {
+      "type": "add",
+      "id": "b64b3b1cac49f7a4",
+      "item": {
+        "type": "markdown",
+        "id": "b64b3b1cac49f7a4",
+        "text": "**0.24.0** \u2014 [[Like This Page]], in the \u2630 menu on every site: pages like the one you were reading, on this farm in one request and then across the federation, starting by itself. `AUTO` runs a report item as soon as it has a query \u2014 a `SUBJECT` title, say \u2014 with no button press. `SUBJECT` now walks back past tool pages (Selected Plugin Pages, Search Tool, this page) to the page the reader was actually on, so the menu door reads the right subject. The *like this page* item reports how long its one request took, and a batched item shows a progress bar while it runs."
+      },
+      "after": "4db2c2944bf88723",
+      "date": 1788615924069
     }
   ]
 }

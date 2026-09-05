@@ -170,7 +170,7 @@ export const emit = (div, item) => {
 
 export const bind = (div, item) => {
   const { mode, specs, rosterRefs, farms, threshold, limit, live, subject: subjectFlag,
-    force, ghostUrl, thresholdSet, batch, algorithm: algorithmRef } = parseDSL(item?.text || '')
+    force, ghostUrl, thresholdSet, batch, algorithm: algorithmRef, auto } = parseDSL(item?.text || '')
   const origin  = window.location.origin
   const status  = div.find('.sim-status')[0]
   installAmbient()   // learn.js: neighbourhood + visits, once per page load
@@ -388,15 +388,16 @@ export const bind = (div, item) => {
   } else if (mode === 'similar') {
     const results = div.find('.sim-results')[0]
 
-    const renderScored = (scored, ts) => {
+    const renderScored = (scored, ts, took) => {
       if (!scored.length) {
         status.textContent = `No similar pages found above threshold ${threshold}`
         return
       }
+      const how = took != null ? ` · one request, ${took < 1000 ? `${Math.round(took)} ms` : `${(took / 1000).toFixed(1)} s`}` : ''
       results.innerHTML = `<h3>Similar Pages</h3><ul>${
         scored.map(({ domain, slug, title, score }) =>
           `<li>${simLink(domain, slug, title, score)}</li>`).join('')
-      }</ul><p class="sim-count">${scored.length} found ${scopeLabel}${cacheNote(ts)}</p>`
+      }</ul><p class="sim-count">${scored.length} found ${scopeLabel}${how}${cacheNote(ts)}</p>`
       status.style.display = 'none'
     }
 
@@ -428,6 +429,7 @@ export const bind = (div, item) => {
             excludePage: { site: s.site, slug: s.slug },
           }
           if (thresholdSet) body.threshold = threshold
+          const t0 = performance.now()
           const res = await fetch(`${origin}/system/search-report.json`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
           })
@@ -436,7 +438,7 @@ export const bind = (div, item) => {
           const scored = (flat.results || []).map(r => ({
             domain: r.site, slug: r.slug, title: r.title, score: r.semantic ?? r.score,
           }))
-          renderScored(scored, null)
+          renderScored(scored, null, performance.now() - t0)
           if (subject) {  // keep the subject visible above the results
             status.textContent = subjectNote(s)
             status.style.display = ''
@@ -611,7 +613,9 @@ export const bind = (div, item) => {
           ? `<li class="sim-pending"><small>${state.pending} new result${state.pending > 1 ? 's' : ''} rank${state.pending > 1 ? '' : 's'} above — ` +
             `<button class="sim-fold">fold in</button></small></li>` : ''
         const cachedNote = state.resumed && !state.running && cache?.batched?.ts ? ` · ${cacheAge(cache.batched.ts)}` : ''
-        results.innerHTML = `<h3>${head}${cachedNote}</h3>${tier}<ul>${pendingLine}${
+        const bar = state.running && state.total
+          ? `<progress class="sim-progress" max="${state.total}" value="${state.searched}"></progress>` : ''
+        results.innerHTML = `<h3>${head}${cachedNote}</h3>${bar}${tier}<ul>${pendingLine}${
           shown.map(r => `<li${opened.has(keyOf(r)) ? ' class="sim-opened"' : ''}>${simLink(r.site, r.slug, r.title, r.semantic)}` + provenance(r) +
             (opened.has(keyOf(r)) ? ` <small class="sim-mark">opened</small>` : '') +
             (r.siblings?.length ? ` <small>+${r.siblings.length}</small>` : '') +
@@ -706,6 +710,11 @@ export const bind = (div, item) => {
     // Keep your place: a batched item that remembers a list for this exact
     // DSL draws it at once and carries on from where it stopped — no
     // re-ranking, no refetch of what was already read.
+    // AUTO: an item that already has its query — a SUBJECT title — runs at once
+    if (!handedOver && mode === 'report' && auto && input.value && !(cache?.batched?.query)) {
+      handedOver = true
+      specsP.then(() => doReport())
+    }
     if (!handedOver && mode === 'report' && cache?.batched?.query) {
       const remembered = cache.batched
       input.value = remembered.query

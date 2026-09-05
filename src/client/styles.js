@@ -3,7 +3,7 @@
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const STYLES = `.sim-results li.sim-opened{opacity:.72}.sim-results .sim-mark{color:#6a6;margin-left:.3em}.sim-results li.sim-pending{list-style:none;margin-left:-1.2em}.sim-results .sim-fold{font-size:90%;padding:0 .4em}
+const STYLES = `.sim-results li.sim-opened{opacity:.72}.sim-results .sim-mark{color:#6a6;margin-left:.3em}.sim-results li.sim-pending{list-style:none;margin-left:-1.2em}.sim-results .sim-fold{font-size:90%;padding:0 .4em}.sim-results .sim-progress{width:100%;height:6px;display:block;margin:2px 0 6px}
 
   .sim-form { display:flex; gap:6px; margin-bottom:8px; }
   .sim-input { flex:1; padding:6px 8px; font-size:14px; border:1px solid #ccc; border-radius:3px; }

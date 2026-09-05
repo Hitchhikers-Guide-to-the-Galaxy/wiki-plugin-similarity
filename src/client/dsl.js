@@ -34,6 +34,7 @@ const parseDSL = text => {
   let label     = null      // BUTTON: custom button caption (GHOST / BUILD modes)
   let batch     = null      // BATCH n: search sites n at a time, widening (0 = off)
   let algorithm = null      // ALGORITHM site/slug or [[Page]]: the reader's Search Algorithm page
+  let auto      = false     // AUTO: run as soon as the item has a query (a SUBJECT title, say) — no button press
 
   // Match a keyword at the start of a line (case-insensitive), requiring it to
   // be followed by end-of-string, whitespace, or colon — not by more word chars.
@@ -49,6 +50,7 @@ const parseDSL = text => {
 
     const upper = line.toUpperCase()
     if (isCmd(upper, 'LIVE'))  { live = true; continue }
+    if (isCmd(upper, 'AUTO'))  { auto = true; continue }
     if (isCmd(upper, 'SUBJECT')) { subject = true; continue }
     if (isCmd(upper, 'AUTHOR')) {
       if (!specs.length && mode === 'search') mode = 'author'
@@ -139,6 +141,7 @@ const parseDSL = text => {
     label,
     batch,
     algorithm,
+    auto,
     thresholdSet: threshold !== null,  // explicit THRESHOLD/SIMILAR in the DSL
   }
 }

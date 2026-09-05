@@ -1,0 +1,77 @@
+{
+  "title": "Like This Page",
+  "story": [
+    {
+      "type": "paragraph",
+      "text": "Pages like the one you were just reading \u2014 on this farm at once, then across the federation, without typing. Open it from the \u2630 menu on any page.",
+      "id": "1748912306ee2b5f"
+    },
+    {
+      "type": "markdown",
+      "text": "## On this farm\n\nOne request: the server already holds this page's vector and every other page's, so it answers in one round trip. The line under the results says how long it took.",
+      "id": "96edf1d390387276"
+    },
+    {
+      "type": "similarity",
+      "text": "SIMILAR: medium\nSUBJECT\n*\nLIMIT: 10",
+      "id": "f477343c53ccebad"
+    },
+    {
+      "type": "markdown",
+      "text": "## Across the federation\n\nThe same question, asked of every wiki the registry knows, a batch of a hundred sites at a time, nearest sites first \u2014 it starts by itself. Results already shown stay where they are while batches land; anything that ranks above them is announced and folded in when you ask; a result you open is marked and keeps its place; and the list is remembered, so coming back here shows it at once and carries on.",
+      "id": "0df9f1994c470d08"
+    },
+    {
+      "type": "similarity",
+      "text": "GALAXY\nREPORT\nSUBJECT\nAUTO\nBATCH 100\nALGORITHM [[Search Algorithm]]\nLIMIT: 10",
+      "id": "608f7f00f80f738b"
+    },
+    {
+      "type": "markdown",
+      "text": "# See\n\n- [[Search Tool]] \u2014 the same searches with a box to type in, and the state of the index\n- [[Search Algorithm]] \u2014 the ranking these items read, a page you can fork and edit\n- [[About Similarity Plugin]] \u2014 the words these items are written in",
+      "id": "96f94b3f371eb431"
+    }
+  ],
+  "journal": [
+    {
+      "type": "create",
+      "item": {
+        "title": "Like This Page",
+        "story": [
+          {
+            "type": "paragraph",
+            "text": "Pages like the one you were just reading \u2014 on this farm at once, then across the federation, without typing. Open it from the \u2630 menu on any page.",
+            "id": "1748912306ee2b5f"
+          },
+          {
+            "type": "markdown",
+            "text": "## On this farm\n\nOne request: the server already holds this page's vector and every other page's, so it answers in one round trip. The line under the results says how long it took.",
+            "id": "96edf1d390387276"
+          },
+          {
+            "type": "similarity",
+            "text": "SIMILAR: medium\nSUBJECT\n*\nLIMIT: 10",
+            "id": "f477343c53ccebad"
+          },
+          {
+            "type": "markdown",
+            "text": "## Across the federation\n\nThe same question, asked of every wiki the registry knows, a batch of a hundred sites at a time, nearest sites first \u2014 it starts by itself. Results already shown stay where they are while batches land; anything that ranks above them is announced and folded in when you ask; a result you open is marked and keeps its place; and the list is remembered, so coming back here shows it at once and carries on.",
+            "id": "0df9f1994c470d08"
+          },
+          {
+            "type": "similarity",
+            "text": "GALAXY\nREPORT\nSUBJECT\nAUTO\nBATCH 100\nALGORITHM [[Search Algorithm]]\nLIMIT: 10",
+            "id": "608f7f00f80f738b"
+          },
+          {
+            "type": "markdown",
+            "text": "# See\n\n- [[Search Tool]] \u2014 the same searches with a box to type in, and the state of the index\n- [[Search Algorithm]] \u2014 the ranking these items read, a page you can fork and edit\n- [[About Similarity Plugin]] \u2014 the words these items are written in",
+            "id": "96f94b3f371eb431"
+          }
+        ]
+      },
+      "date": 1788615924069,
+      "provenance": "Shipped by wiki-plugin-similarity (Personal Search Plan, Phase 1) \u2014 a plugin page, present on every site; fork it to make it your own"
+    }
+  ]
+}

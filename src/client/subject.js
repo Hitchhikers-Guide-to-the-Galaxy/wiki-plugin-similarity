@@ -10,9 +10,17 @@
 // remote pages. `text` is title + opening prose, capped: the BGE-small
 // embedder truncates around 512 tokens, so more would be discarded anyway.
 
+// Tool pages are never the subject: opened from the ☰ menu, the page before
+// this one is Selected Plugin Pages, and the reader means the page before
+// that. Walk back past any of these to the page they were actually reading.
+const TOOL_SLUGS = new Set(['selected-plugin-pages', 'search-tool', 'like-this-page', 'semantic-search',
+                            'search-algorithm', 'personal-search-demo', 'search-tool-demo'])
+const slugOfPage = $p => (($p.attr('id') || '').split('_rev')[0])
+
 const resolveSubject = div => {
   const $self = div.parents('.page:first')
-  const $host = $self.prev('.page')
+  let $host = $self.prev('.page')
+  while ($host.length && TOOL_SLUGS.has(slugOfPage($host))) $host = $host.prev('.page')
   const $page = $host.length ? $host : $self
   const slug  = ($page.attr('id') || '').split('_rev')[0]
   const site  = $page.data('site') || window.location.hostname
