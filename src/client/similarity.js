@@ -46,13 +46,14 @@ import { readCache, writeCache, cacheAge } from './cache.js'
 import { runBatched, keyOf } from './batch.js'
 import { loadAlgorithm, parseAlgorithm, learnedSignals } from './algorithm.js'
 import { credit, learned, forget, installAmbient, rememberInto } from './learn.js'
-import { STYLES, siteFlag } from './styles.js'
+import { STYLES, siteFlag, pageUrl } from './styles.js'
+import { doorOpen, setDoor } from './door.js'
 import { install, takePending } from './searchdoor.js'
 
 // ── similarity item ────────────────────────────────────────────────────────────
 
 const simLink = (domain, slug, title, score) =>
-  `<a class="sim-link" data-title="${title}" data-slug="${slug}" data-site="${domain}" href="#">` +
+  `<a class="sim-link" data-title="${title}" data-slug="${slug}" data-site="${domain}" href="${pageUrl(domain, slug)}">` +
   `${siteFlag(domain, score)} ${title}</a>`
 
 const shortDate = ms => {
@@ -121,6 +122,14 @@ export const emit = (div, item) => {
       <div class="similarity" data-id="${item.id}" data-mode="${mode}" data-scope="">
         <div class="sim-status">Reading this search algorithm…</div>
         <div class="sim-list"></div>
+      </div>`)
+  } else if (mode === 'door') {
+    // The search box door: a checkbox, this browser's preference (door.js)
+    div.html(`
+      <style>${STYLES}</style>
+      <div class="similarity" data-id="${item.id}" data-mode="${mode}">
+        <label class="sim-door"><input type="checkbox" class="sim-door-toggle"> Send the search box at the foot of every page to this page</label>
+        <div class="sim-status"></div>
       </div>`)
   } else if (mode === 'status') {
     div.html(`
@@ -209,6 +218,7 @@ export const bind = (div, item) => {
     window.wiki.textEditor(div, item)
   })
   div.on('click', '.sim-link', function (e) {
+    if (e.metaKey || e.ctrlKey || e.button === 1) return   // the real href, in a tab
     e.preventDefault()
     const $a = $(this)
     // shift-click appends at the end of the lineup instead of truncating after this page
@@ -222,7 +232,18 @@ export const bind = (div, item) => {
 
   const cacheNote = ts => ts ? ` · cached ${cacheAge(ts)}` : ''
 
-  if (mode === 'status') {
+  if (mode === 'door') {
+    const box = div.find('.sim-door-toggle')[0]
+    const say = () => {
+      status.textContent = doorOpen()
+        ? 'On — Enter in the search box at the foot of any page opens this page with the query, searching the whole farm.'
+        : 'Off — the search box behaves as the wiki built it. Remembered by this browser only.'
+    }
+    box.checked = doorOpen()
+    say()
+    box.addEventListener('change', () => { setDoor(box.checked); say() })
+
+  } else if (mode === 'status') {
     // The state of the index behind every other item on the page: which model,
     // how much is indexed, when it was last built, and — the one that decides
     // whether any of this works — whether a query can be turned into a vector
@@ -633,6 +654,7 @@ export const bind = (div, item) => {
         results.querySelector('.sim-open')?.addEventListener('click', () => openAsPage(merged))
         results.querySelector('.sim-fold')?.addEventListener('click', () => state.foldIn())
         results.querySelectorAll('.sim-link').forEach(a => a.addEventListener('click', e => {
+          if (e.metaKey || e.ctrlKey || e.button === 1) return   // the real href, in a tab
           e.preventDefault()
           const { site, slug, title } = a.dataset
           credit(site, 'clicked')

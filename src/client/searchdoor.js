@@ -2,9 +2,11 @@
 //
 // The `search` link at the foot of every page, and the search box beside it,
 // both build their result page in JavaScript: a fixed set of items, identical
-// on every site, that no owner can edit. This redirects both to the Search
-// Tool page, which is a real wiki page — shipped by this plugin, overridable
-// by forking it.
+// on every site, that no owner can edit. This redirects the link to the
+// Search Tool page, which is a real wiki page — shipped by this plugin,
+// overridable by forking it — and the box too, but only for a reader who has
+// opened that door on the Search Tool page (door.js); by default the box
+// keeps the behaviour the wiki built.
 //
 // Why this lives in a plugin at all. The honest home for a change to the
 // footer link is wiki-client, but wiki-client is bundled inside the wiki
@@ -21,6 +23,8 @@
 // Capture phase, because wiki-client binds the same link by delegation on a
 // parent; stopping propagation there is what keeps the fabricated page from
 // being built underneath us.
+
+import { doorOpen } from './door.js'
 
 const SEARCH_TOOL = 'Search Tool'
 const SLUG = 'search-tool'
@@ -69,8 +73,12 @@ const install = () => {
   // Search Tool instead, carrying the query into the farm-wide search there
   // and running it, so a typed question still lands on results — on a page
   // the owner can change.
+  // Only when the reader has opened the door on the Search Tool page
+  // (door.js): by default the box is the wiki's own, incremental search and
+  // all. Read at the keystroke, so the checkbox works without a reload.
   document.addEventListener('keydown', e => {
     if (available !== true) return
+    if (!doorOpen()) return
     if (e.key !== 'Enter') return
     const input = e.target
     if (!input || !input.classList || !input.classList.contains('search')) return

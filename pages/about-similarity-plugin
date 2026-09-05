@@ -9,7 +9,7 @@
     {
       "type": "markdown",
       "id": "28edff984cc5334d",
-      "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE / GALAXY):\n\n- (no keyword) \u2014 interactive semantic search form\n- `SIMILAR: high|medium|low` \u2014 ambient: pages similar to this page\n- `REPORT` \u2014 server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` \u2014 galactic MiniSearch over live site-index.json files\n- `SITES` \u2014 which site should this page go on? Per-domain aggregation of the page-vector scan: 0.7 \u00d7 mean of the top 5 page similarities + 0.3 \u00d7 site-centroid similarity. Forked pages count for every site that carries them\n- `LIST` \u2014 table of indexed domains\n- `AUTHOR` \u2014 search results as a draggable ghost page\n- `BUILD` / `FORCE` \u2014 proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` \u2014 open any page-json as a ghost page\n- `ROSTER site/slug` \u2014 add a roster page's sites to the scope (off-farm sites searched via the galaxy cache)\n- `FARM domain` \u2014 ask a peer farm to continue the search. The peer answers from exactly the sites whose own [[Federated Farm Search]] page grants your origin (`FROM` lines; `FROM *` needs the peer admin's `WIKI_PEER_FEDERATION=open`)\n- `GALAXY` \u2014 search the off-farm federation sites indexed into this host's galaxy tree. A scope, not a mode: `GALAXY` alone answers only from the federation (the farm's own pages are never swept in, and `*` never includes galaxy sites); `*` and `GALAXY` together search farm and federation as one\n- `SUBJECT` \u2014 act on the previous page in the lineup, the host a tool page was opened beside\n- `THRESHOLD: 0.72` \u00b7 `LIMIT: 8` \u00b7 `LIVE` \u2014 tuning"
+      "text": "## The DSL\n\nThe first ALL-CAPS keyword sets the mode; other lines are domain specs (globs, explicit domains, or the scope keywords PUBLIC / LOCAL / PRIVATE / GALAXY):\n\n- (no keyword) \u2014 interactive semantic search form\n- `SIMILAR: high|medium|low` \u2014 ambient: pages similar to this page\n- `REPORT` \u2014 server-side ranked, stub-filtered, fork-bundled report\n- `KEYWORD` \u2014 galactic MiniSearch over live site-index.json files\n- `SITES` \u2014 which site should this page go on? Per-domain aggregation of the page-vector scan: 0.7 \u00d7 mean of the top 5 page similarities + 0.3 \u00d7 site-centroid similarity. Forked pages count for every site that carries them\n- `LIST` \u2014 table of indexed domains\n- `AUTHOR` \u2014 search results as a draggable ghost page\n- `BUILD` / `FORCE` \u2014 proxy to the farm indexer, where configured\n- `GHOST url` / `BUTTON label` \u2014 open any page-json as a ghost page\n- `ROSTER site/slug` \u2014 add a roster page's sites to the scope (off-farm sites searched via the galaxy cache)\n- `FARM domain` \u2014 ask a peer farm to continue the search. The peer answers from exactly the sites whose own [[Federated Farm Search]] page grants your origin (`FROM` lines; `FROM *` needs the peer admin's `WIKI_PEER_FEDERATION=open`)\n- `GALAXY` \u2014 search the off-farm federation sites indexed into this host's galaxy tree. A scope, not a mode: `GALAXY` alone answers only from the federation (the farm's own pages are never swept in, and `*` never includes galaxy sites); `*` and `GALAXY` together search farm and federation as one\n- `SUBJECT` \u2014 act on the previous page in the lineup, the host a tool page was opened beside\n- `DOOR` \u2014 a checkbox: send the wiki's footer search box to this page (off by default, remembered per browser)\n- `AUTO` \u2014 run a report item as soon as it has a query, a `SUBJECT` title say, with no button press\n- `THRESHOLD: 0.72` \u00b7 `LIMIT: 8` \u00b7 `LIVE` \u2014 tuning"
     },
     {
       "type": "markdown",
@@ -150,6 +150,11 @@
       "type": "markdown",
       "id": "2c0e09b0e2806c61",
       "text": "**0.24.1** \u2014 the \u2630 menu mended on older wiki-clients: Selected Plugin Pages is a list of reference items, and the public farm's client stalls partway through drawing it, leaving blank lines \u2014 Like This Page among them. Since this plugin is on every page, it now waits for the client and draws the reference items the client left undrawn, with the client's own reference plugin. Where the client draws the whole list, nothing runs."
+    },
+    {
+      "type": "markdown",
+      "id": "fc8d28c176a1e33b",
+      "text": "**0.25.0** \u2014 three corrections from use. The wiki's footer search box is the wiki's own again: it goes to the Search Tool only for a reader who ticks the `DOOR` item there, remembered by that browser under `similarity:door` and read at each keystroke; the footer `search` link still opens the Search Tool. The \u2630 menu carries one Similarity entry, [[Search Tool]]; [[Like This Page]], [[Search Algorithm]] and [[Semantic Search]] are linked from it. Every result link now carries the page's real URL, so the status bar shows where it goes and a cmd, ctrl or middle click opens it in a tab; a plain click still opens it in the lineup."
     },
     {
       "type": "markdown",
@@ -586,6 +591,17 @@
       },
       "after": "b64b3b1cac49f7a4",
       "date": 1788619828706
+    },
+    {
+      "type": "add",
+      "id": "fc8d28c176a1e33b",
+      "item": {
+        "type": "markdown",
+        "id": "fc8d28c176a1e33b",
+        "text": "**0.25.0** \u2014 three corrections from use. The wiki's footer search box is the wiki's own again: it goes to the Search Tool only for a reader who ticks the `DOOR` item there, remembered by that browser under `similarity:door` and read at each keystroke; the footer `search` link still opens the Search Tool. The \u2630 menu carries one Similarity entry, [[Search Tool]]; [[Like This Page]], [[Search Algorithm]] and [[Semantic Search]] are linked from it. Every result link now carries the page's real URL, so the status bar shows where it goes and a cmd, ctrl or middle click opens it in a tab; a plain click still opens it in the lineup."
+      },
+      "after": "2c0e09b0e2806c61",
+      "date": 1788621810337
     }
   ]
 }

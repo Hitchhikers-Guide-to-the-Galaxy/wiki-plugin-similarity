@@ -108,6 +108,10 @@ const parseDSL = text => {
       if (mode === 'search') mode = 'status'
       continue
     }
+    if (isCmd(upper, 'DOOR')) {
+      if (mode === 'search') mode = 'door'
+      continue
+    }
     if (isCmd(upper, 'SIMILAR')) {
       const level = val(upper, 'SIMILAR').toLowerCase()
       threshold = SIMILAR_THRESHOLDS[level] || DEFAULT_THRESHOLD  // '' → medium

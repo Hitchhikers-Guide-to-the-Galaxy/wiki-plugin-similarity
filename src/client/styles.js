@@ -3,7 +3,7 @@
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const STYLES = `.sim-results li.sim-opened{opacity:.72}.sim-results .sim-mark{color:#6a6;margin-left:.3em}.sim-results li.sim-pending{list-style:none;margin-left:-1.2em}.sim-results .sim-fold{font-size:90%;padding:0 .4em}.sim-results .sim-progress{width:100%;height:6px;display:block;margin:2px 0 6px}
+const STYLES = `.sim-results li.sim-opened{opacity:.72}.sim-results .sim-mark{color:#6a6;margin-left:.3em}.sim-results li.sim-pending{list-style:none;margin-left:-1.2em}.sim-results .sim-fold{font-size:90%;padding:0 .4em}.sim-results .sim-progress{width:100%;height:6px;display:block;margin:2px 0 6px}.sim-door{display:flex;gap:8px;align-items:center;font-size:15px;margin:4px 0}
 
   .sim-form { display:flex; gap:6px; margin-bottom:8px; }
   .sim-input { flex:1; padding:6px 8px; font-size:14px; border:1px solid #ccc; border-radius:3px; }
@@ -30,9 +30,14 @@ const STYLES = `.sim-results li.sim-opened{opacity:.72}.sim-results .sim-mark{co
   .sim-list .sim-flag { margin-right:6px; }
 `
 
+// The page a result points at, as a real URL: the status bar can show it and
+// a middle or cmd-click can open it in a tab. Localhost farms speak http.
+const pageUrl = (domain, slug) =>
+  `${/(^|\.)localhost(:\d+)?$/.test(String(domain)) ? 'http:' : 'https:'}//${domain}/view/${slug}`
+
 const siteFlag = (domain, score) =>
   `<img class="sim-flag remote" src="${window.wiki.site(domain).flag()}"
         title="${domain} — score ${score.toFixed(3)}"
         data-site="${domain}">`
 
-export { STYLES, siteFlag }
+export { STYLES, siteFlag, pageUrl }
