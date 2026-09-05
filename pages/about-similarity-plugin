@@ -148,6 +148,11 @@
     },
     {
       "type": "markdown",
+      "id": "2c0e09b0e2806c61",
+      "text": "**0.24.1** \u2014 the \u2630 menu mended on older wiki-clients: Selected Plugin Pages is a list of reference items, and the public farm's client stalls partway through drawing it, leaving blank lines \u2014 Like This Page among them. Since this plugin is on every page, it now waits for the client and draws the reference items the client left undrawn, with the client's own reference plugin. Where the client draws the whole list, nothing runs."
+    },
+    {
+      "type": "markdown",
       "id": "ac44fae5937e27eb",
       "text": "**0.21.1** \u2014 three fixes from the first day of the second peer. A farm's copy of a peer's Site Index is checked **hourly** by conditional GET, and always once at startup, so a restart never serves a copy the peer has since rebuilt \u2014 it was six hours, and a 304 reset the clock, so a new indexer's sites could take most of a day to reach the Cafe. A domain named explicitly in a batched item is **searched whether or not the Site Index knows it**, as one more batch, since the cascade finds the peer that holds it. And a batched item's ready line reports how far the Site Index reaches rather than how many domains this host holds, which on a farm with no galaxy tree read as a misleading zero."
     },
@@ -570,6 +575,17 @@
       },
       "after": "4db2c2944bf88723",
       "date": 1788615924069
+    },
+    {
+      "type": "add",
+      "id": "2c0e09b0e2806c61",
+      "item": {
+        "type": "markdown",
+        "id": "2c0e09b0e2806c61",
+        "text": "**0.24.1** \u2014 the \u2630 menu mended on older wiki-clients: Selected Plugin Pages is a list of reference items, and the public farm's client stalls partway through drawing it, leaving blank lines \u2014 Like This Page among them. Since this plugin is on every page, it now waits for the client and draws the reference items the client left undrawn, with the client's own reference plugin. Where the client draws the whole list, nothing runs."
+      },
+      "after": "b64b3b1cac49f7a4",
+      "date": 1788619828706
     }
   ]
 }

@@ -49,6 +49,7 @@ const openSearchTool = ($page, keepLineup) => {
 }
 
 const install = () => {
+  watchMenu()
   if (typeof document === 'undefined' || !window.wiki || !window.$) return
 
   checkAvailable()
@@ -83,6 +84,53 @@ const install = () => {
     setPending(query)
     openSearchTool(window.$('.page').last(), false)
   }, true)
+}
+
+// The ☰ menu's page, Selected Plugin Pages, is a list of reference items —
+// one per plugin page, Like This Page among them. Older wiki-clients (the
+// public farm's) render that list in a chain that stalls partway, and a
+// reference that was never drawn is a blank line nobody can click. This
+// plugin is on every page, so when that page appears it waits for the client
+// to do its work and then draws whatever reference items the client left
+// undrawn, with the client's own reference plugin. Where the client renders
+// the whole list itself, nothing here runs.
+const MENU_SLUG = 'selected-plugin-pages'
+const mendMenu = () => {
+  const $ = window.$
+  const page = document.getElementById(MENU_SLUG)
+  if (!page || !$ || !window.plugins || !window.plugins.reference) return 0
+  const data = $(page).data('data') || {}
+  const story = data.story || []
+  let mended = 0
+  page.querySelectorAll('.item.reference').forEach(el => {
+    if (el.classList.contains('emit') || el.textContent.trim()) return
+    const item = story.find(s => s.id === el.dataset.id)
+    if (!item) return
+    try {
+      const plugin = window.plugins.reference
+      plugin.emit($(el), item)
+      if (plugin.bind) plugin.bind($(el), item)
+      el.classList.add('emit')
+      mended++
+    } catch { /* leave it to the client */ }
+  })
+  return mended
+}
+const watchMenu = () => {
+  const main = document.querySelector('.main') || document.body
+  let timer = null
+  const arm = () => {
+    if (!document.getElementById(MENU_SLUG)) return
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      const n = mendMenu()
+      if (n) console.log(`[wiki-plugin-similarity] drew ${n} menu entries the client left blank`)
+    }, 4000)
+  }
+  try {
+    new MutationObserver(arm).observe(main, { childList: true })
+  } catch { /* no observer: the door still works by the search link */ }
+  arm()
 }
 
 // Handing the query over, rather than racing the page.
