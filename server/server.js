@@ -82,7 +82,7 @@ const { buildSiteReport } = require('./site-report')
 const { searchFarm, keywordReportPage, findTwins } = require('./farm-search')
 const { searchGalaxy } = require('./galaxy-search')
 const { galaxyRoot, galaxyCacheStats } = require('./galaxy-vectors')
-const { warmUp } = require('./vector-store')
+const { warmUp, countPages } = require('./vector-store')
 const { resolveAuthor } = require('./author-index')
 const { ceiling, grantingDomains, guardEnvelope } = require('./peer-guard')
 const { postToPeer, appendPeerSections, makePeerDesk, setModelMeta } = require('./peer')
@@ -367,17 +367,17 @@ const startServer = ({ argv, app }) => {
       .filter(({ domain }) => visible(req, domain))
       .map(({ farm, domain }) => {
         const file = path.join(farm, domain, 'status', 'semantic-vectors.json')
-        let pageCount = null
-        let built = null
-        try {
-          // When the vectors were last written. One stat on top of a read we
-          // are already paying for, and it is what lets a reader see whether
-          // the index behind an answer is current or months old.
-          built = new Date(fs.statSync(file).mtimeMs).toISOString()
-          const pages = JSON.parse(fs.readFileSync(file, 'utf8'))
-          pageCount = Array.isArray(pages) ? pages.length : null
-        } catch { /* ignore */ }
-        return { domain, page_count: pageCount, built }
+        // Count from the vector store, never by parsing the file here: this
+        // route runs three times when the Search Tool page opens, and parsing
+        // every tree's vectors on the event loop froze the farm (0.25.1).
+        // `built` is when the vectors were last written — what lets a reader
+        // see whether the index behind an answer is current or months old.
+        const counted = countPages(file)
+        return {
+          domain,
+          page_count: counted ? counted.n : null,
+          built: counted ? new Date(counted.mtimeMs).toISOString() : null,
+        }
       })
     if (limit) results = results.slice(0, limit)
     res.json(results)

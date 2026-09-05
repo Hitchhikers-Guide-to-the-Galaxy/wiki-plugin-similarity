@@ -51,6 +51,23 @@ describe('vector store', () => {
     assert.equal(storeStats().parsed, 1)
   })
 
+  it('counts pages without parsing: resident entry, then the disk-cache head, one parse at most', async () => {
+    resetStore()
+    const { countPages } = store
+    const first = countPages(file)              // never seen: the one parse, seeding memory + disk cache
+    assert.equal(first.n, 2)
+    assert.ok(first.mtimeMs > 0)
+    assert.equal(storeStats().parsed, 1)
+    assert.equal(countPages(file).n, 2)         // resident: a stat and a Map lookup
+    assert.equal(storeStats().parsed, 1)
+    await sleep(100)                             // let the async disk-cache write land
+    resetStore()                                 // forget memory, keep the disk cache
+    assert.equal(countPages(file).n, 2)
+    assert.equal(storeStats().parsed, 0, 'the disk-cache head answered; nothing parsed')
+    assert.equal(storeStats().restored, 0, 'and nothing restored either — 64 bytes read')
+    assert.equal(countPages(path.join(root, 'nowhere', 'status', 'semantic-vectors.json')), null)
+  })
+
   it('serves the same array on a repeat load and counts heap bytes', () => {
     const a = loadVectorsFile(file)
     const b = loadVectorsFile(file)

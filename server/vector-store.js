@@ -199,6 +199,33 @@ const siteCentroid = file => {
   return e.centroid
 }
 
+// ── Page count without the parse ────────────────────────────────────────────
+// indexed-domains.json used to read and JSON.parse every vectors file just to
+// count its pages — 1.5 GB across both trees on the Pi5, synchronously, which
+// froze the whole farm for 20-90 s and got it restarted by the healthcheck
+// (2026-09-05). The count is already known three cheaper ways, in order:
+// the resident entry; the head of the disk-cache meta (written as
+// {"n":…,"dim":…}); and, only for a file never seen before, one parse that
+// seeds both so the next call is a stat. Returns {n, mtimeMs} or null.
+const countPages = file => {
+  let stat
+  try { stat = fs.statSync(file) } catch { return null }
+  const hit = cache.get(file)
+  if (hit && hit.mtimeMs === stat.mtimeMs) return { n: hit.n, mtimeMs: stat.mtimeMs }
+  const { meta } = storePaths(file, stat)
+  try {
+    const fd = fs.openSync(meta, 'r')
+    try {
+      const buf = Buffer.alloc(64)
+      const got = fs.readSync(fd, buf, 0, 64, 0)
+      const m = /^\{"n":(\d+)/.exec(buf.toString('utf8', 0, got))
+      if (m) return { n: parseInt(m[1], 10), mtimeMs: stat.mtimeMs }
+    } finally { fs.closeSync(fd) }
+  } catch { /* no disk cache for this version of the file yet */ }
+  const entry = loadEntry(file)
+  return { n: entry ? entry.n : null, mtimeMs: stat.mtimeMs }
+}
+
 // The compatibility surface — an array of pages, each with a `.vector` view.
 const loadVectorsFile = file => {
   const entry = loadEntry(file)
@@ -265,6 +292,6 @@ const resetStore = () => {
 }
 
 module.exports = {
-  loadEntry, loadVectorsFile, loadVectorsCached, siteCentroid, warmUp, storeStats,
+  loadEntry, loadVectorsFile, loadVectorsCached, siteCentroid, warmUp, storeStats, countPages,
   resetStore, buildEntry, storeDir, CACHE_BYTES,
 }
