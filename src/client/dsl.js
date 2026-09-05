@@ -79,7 +79,7 @@ const parseDSL = text => {
     if (isCmd(upper, 'BUTTON')) { label = val(line, 'BUTTON'); continue }
     if (isCmd(upper, 'BATCH')) {
       const b = val(line, 'BATCH').toLowerCase()
-      batch = (b === 'off' || b === 'no' || b === '0') ? 0 : (parseInt(b) || 50)
+      batch = (b === 'off' || b === 'no' || b === '0') ? 0 : (parseInt(b) || 100)
       continue
     }
     if (isCmd(upper, 'ALGORITHM')) {

@@ -13,8 +13,49 @@
 //   3. Merge by score, render in the item as each batch lands, stop when
 //      QUIET consecutive batches change nothing in the top `limit`, and
 //      offer the rest behind a button.
+//
+// Keep your place (Personal Search Plan, Phase 1): what is on screen stays
+// where it is while batches land. `shown` is the list the reader sees, in
+// the order it was first drawn; `merged` is everything found, best first.
+// A result that now ranks inside the top `limit` but is not on screen is
+// counted as pending, announced, and folded in only on request — and an
+// opened result keeps its position even then, so the list stays a map back
+// to where the reader was. A snapshot of the run is handed to the item
+// after every render, so it can draw itself again later and carry on.
 
 const QUIET = 3
+const DEFAULT_BATCH = 100   // answers in well under a second on a Pi over a tailnet (measured 5 September 2026)
+const KEEP = 150            // merged results remembered per item
+
+const keyOf = r => `${r.site} ${r.slug}`
+
+const pendingAbove = (shown, merged, limit) => {
+  const have = new Set(shown.map(keyOf))
+  return merged.slice(0, limit).filter(r => !have.has(keyOf(r))).length
+}
+
+// Redraw the list from the merged order, but leave every opened result in
+// the position it had — the reader found it there.
+const foldIn = (shown, merged, limit, opened) => {
+  const held = new Map()   // position → opened result
+  shown.forEach((r, i) => { if (opened.has(keyOf(r))) held.set(i, r) })
+  const heldKeys = new Set([...held.values()].map(keyOf))
+  const rest = merged.filter(r => !heldKeys.has(keyOf(r)))
+  const out = []
+  let i = 0
+  const size = Math.max(limit, held.size ? Math.max(...held.keys()) + 1 : 0)
+  for (let pos = 0; pos < size; pos++) {
+    if (held.has(pos)) out.push(held.get(pos))
+    else if (i < rest.length) out.push(rest[i++])
+  }
+  return out
+}
+
+// Refresh shown entries from the merged list (siblings, moved flags) without moving them
+const refreshShown = (shown, merged) => {
+  const byKey = new Map(merged.map(r => [keyOf(r), r]))
+  return shown.map(r => byKey.get(keyOf(r)) || r)
+}
 
 const neighbourhoodDomains = () => {
   const out = new Set()
@@ -42,56 +83,78 @@ const post = async (url, body) => {
 }
 
 const sameTop = (a, b, limit) => {
-  const ka = a.slice(0, limit).map(r => `${r.site} ${r.slug}`).join('|')
-  const kb = b.slice(0, limit).map(r => `${r.site} ${r.slug}`).join('|')
+  const ka = a.slice(0, limit).map(keyOf).join('|')
+  const kb = b.slice(0, limit).map(keyOf).join('|')
   return ka === kb
 }
 
 // opts: {origin, query, seeded, specs, limit, threshold, thresholdSet, batch,
-//        roster, algorithm, prefer, render(results, state), status(text)}
+//        roster, algorithm, prefer, render(results, state), status(text),
+//        resume: a snapshot() from an earlier run, to continue without re-ranking,
+//        save(snapshot): called after every render so the item can remember}
 // Returns the final merged results; runs until done, stopped, or converged.
 const runBatched = async opts => {
-  const { origin, query, seeded = {}, specs, limit, batch, algorithm, render } = opts
+  const { origin, query, seeded = {}, specs, limit, batch, algorithm, render, resume } = opts
   const say = t => opts.status && opts.status(t)
-  const prefer = {
-    roster: [...(opts.roster || []), ...((algorithm && algorithm.liked) || [])],
-    neighborhood: neighbourhoodDomains(),
-    followed: true,
-    ...(opts.prefer || {}),
+  let rank
+  if (resume && Array.isArray(resume.remaining)) {
+    rank = { batches: resume.remaining, count: resume.total, sites: resume.sites || [],
+             siteIndex: resume.siteIndex || null, unindexed: resume.unindexed || [] }
+  } else {
+    const prefer = {
+      roster: [...(opts.roster || []), ...((algorithm && algorithm.liked) || [])],
+      neighborhood: neighbourhoodDomains(),
+      followed: true,
+      ...(opts.prefer || {}),
+    }
+    say('Ranking sites…')
+    rank = await post(`${origin}/system/site-rank.json`, {
+      query, ...seeded, domains: specs, prefer, algorithm: algorithm || {}, batch: batch || DEFAULT_BATCH,
+    })
   }
-  say('Ranking sites…')
-  const rank = await post(`${origin}/system/site-rank.json`, {
-    query, ...seeded, domains: specs, prefer, algorithm: algorithm || {}, batch: batch || 50,
-  })
   const batches = rank.batches || []
-  // A domain named explicitly is searched whether or not this farm's Site
-  // Index knows it: the cascade finds the peer that holds it. Unranked
-  // explicit domains go last, as one more batch.
-  const ranked = new Set(batches.flat().map(d => d.toLowerCase()))
-  const explicit = (specs || []).filter(sp => typeof sp === 'string' && /\./.test(sp) &&
-    !/[*?]/.test(sp) && !['PUBLIC', 'LOCAL', 'PRIVATE', 'GALAXY'].includes(sp.toUpperCase()) &&
-    !ranked.has(sp.toLowerCase()))
-  if (explicit.length) batches.push(explicit)
-  const total = (rank.count || 0) + explicit.length || batches.reduce((n, b) => n + b.length, 0)
-  const state = { searched: 0, total, batches: batches.length, done: 0, stopped: false,
+  const total = rank.count || batches.reduce((n, b) => n + b.length, 0)
+  const state = { searched: resume?.searched || 0, total, batches: batches.length, done: 0, stopped: false,
                   converged: false, running: true, unindexed: rank.unindexed || [],
                   // who answered: this farm and each peer, by sites searched
-                  answered: { local: 0 }, siteIndex: rank.siteIndex || null,
+                  answered: resume?.answered || { local: 0 }, siteIndex: rank.siteIndex || null,
                   // what the Site Index says of each site: when it was indexed, by whom
-                  siteInfo: new Map((rank.sites || []).map(r => [r.domain, r])) }
+                  siteInfo: new Map((rank.sites || []).map(r => [r.domain, r])),
+                  // keep your place: the list as drawn, what ranks above it unseen, what was opened
+                  shown: resume?.shown || [], pending: 0, opened: new Set(resume?.opened || []),
+                  resumed: !!resume }
 
-  const merged = new Map()
-  let results = []
+  const merged = new Map((resume?.merged || []).map(r => [keyOf(r), r]))
+  let results = [...merged.values()].sort((a, b) => b.score - a.score)
   let quiet = 0
   const stop = () => { state.stopped = true }
   state.stop = stop
+  const remember = () => { try { opts.save && opts.save(state.snapshot()) } catch { /* nothing to remember into */ } }
+  state.foldIn = () => {
+    state.shown = foldIn(state.shown, results, limit, state.opened)
+    state.pending = 0
+    render(results, state)
+    remember()
+  }
+  state.markOpened = key => {
+    state.opened.add(key)
+    render(results, state)
+    remember()
+  }
+  // what an item needs to draw itself again later, and to carry on
+  state.snapshot = () => ({
+    query, total, searched: state.searched, converged: state.converged, stopped: state.stopped,
+    merged: results.slice(0, KEEP), shown: state.shown, opened: [...state.opened],
+    remaining: batches.slice(state.done), answered: state.answered, siteIndex: state.siteIndex,
+    unindexed: state.unindexed, sites: [...state.siteInfo.values()].slice(0, 400),
+  })
 
   const runBatch = async domains => {
     const body = { query, ...seeded, domains, limit: Math.max(limit * 3, 30), flat: true }
     if (opts.thresholdSet) body.threshold = opts.threshold
     const flat = await post(`${origin}/system/search-report.json`, body)
     for (const r of flat.results || []) {
-      const key = `${r.site} ${r.slug}`
+      const key = keyOf(r)
       const prev = merged.get(key)
       if (!prev || prev.score < r.score) merged.set(key, r)
     }
@@ -107,6 +170,10 @@ const runBatched = async opts => {
     state.searched += domains.length
     state.done += 1
     quiet = unchanged ? quiet + 1 : 0
+    // keep your place: draw the first list, then only refresh what is shown
+    if (!state.shown.length) state.shown = next.slice(0, limit)
+    else state.shown = refreshShown(state.shown, next)
+    state.pending = pendingAbove(state.shown, next, limit)
   }
 
   const remaining = () => batches.slice(state.done)
@@ -116,6 +183,7 @@ const runBatched = async opts => {
     while (state.done < batches.length && !state.stopped) {
       await runBatch(batches[state.done])
       render(results, state)
+      remember()
       if (!all && quiet >= QUIET && state.done < batches.length) {
         state.converged = true
         break
@@ -123,12 +191,20 @@ const runBatched = async opts => {
     }
     state.running = false
     render(results, state)
+    remember()
     return results
   }
   state.continueAll = () => { state.converged = false; quiet = -Infinity; return loop(true) }
 
+  if (resume && resume.remaining && !resume.remaining.length) {
+    // nothing left to search: draw what was remembered and stand still
+    state.running = false
+    state.converged = !!resume.converged
+    render(results, state)
+    return { results, state, remaining }
+  }
   await loop(false)
   return { results, state, remaining }
 }
 
-export { runBatched, neighbourhoodDomains, QUIET }
+export { runBatched, neighbourhoodDomains, QUIET, DEFAULT_BATCH, keyOf, pendingAbove, foldIn, refreshShown }

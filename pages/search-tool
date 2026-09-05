@@ -44,7 +44,7 @@
   {
    "type": "similarity",
    "id": "e0c23ec26680bb1d",
-   "text": "GALAXY\nREPORT\nBATCH 50\nALGORITHM [[Search Algorithm]]\nLIMIT: 10"
+   "text": "GALAXY\nREPORT\nBATCH 100\nALGORITHM [[Search Algorithm]]\nLIMIT: 10"
   },
   {
    "type": "markdown",
@@ -179,7 +179,7 @@
    "item": {
     "type": "similarity",
     "id": "e0c23ec26680bb1d",
-    "text": "GALAXY\nREPORT\nBATCH 50\nALGORITHM [[Search Algorithm]]\nLIMIT: 10"
+    "text": "GALAXY\nREPORT\nBATCH 100\nALGORITHM [[Search Algorithm]]\nLIMIT: 10"
    },
    "date": 1788507377909
   }

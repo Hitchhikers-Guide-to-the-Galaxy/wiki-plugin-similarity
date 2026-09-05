@@ -138,6 +138,11 @@
     },
     {
       "type": "markdown",
+      "id": "4db2c2944bf88723",
+      "text": "**0.23.0** \u2014 keep your place (Personal Search Plan, Phase 1). The *like the page you came from* item asks the server for one seeded report instead of pulling every site's vectors into the browser (417 requests and 167 MB on the Cafe became one request). A batched list no longer reorders under the reader: results already shown stay where they are while batches land, new results that rank above them are announced \u2014 *n new results rank above \u2014 fold in* \u2014 and folded in on request; a result the reader opened is marked and keeps its position even then. The list is remembered per item and query, so coming back to the page shows it at once and carries on from where it stopped, without re-ranking. The default batch is a hundred sites, measured to answer in under half a second on a Pi over a tailnet."
+    },
+    {
+      "type": "markdown",
       "id": "ac44fae5937e27eb",
       "text": "**0.21.1** \u2014 three fixes from the first day of the second peer. A farm's copy of a peer's Site Index is checked **hourly** by conditional GET, and always once at startup, so a restart never serves a copy the peer has since rebuilt \u2014 it was six hours, and a 304 reset the clock, so a new indexer's sites could take most of a day to reach the Cafe. A domain named explicitly in a batched item is **searched whether or not the Site Index knows it**, as one more batch, since the cascade finds the peer that holds it. And a batched item's ready line reports how far the Site Index reaches rather than how many domains this host holds, which on a farm with no galaxy tree read as a misleading zero."
     },
@@ -538,6 +543,17 @@
       },
       "after": "6c51f2131b0e7623",
       "date": 1788563504873
+    },
+    {
+      "type": "add",
+      "id": "4db2c2944bf88723",
+      "item": {
+        "type": "markdown",
+        "id": "4db2c2944bf88723",
+        "text": "**0.23.0** \u2014 keep your place (Personal Search Plan, Phase 1). The *like the page you came from* item asks the server for one seeded report instead of pulling every site's vectors into the browser (417 requests and 167 MB on the Cafe became one request). A batched list no longer reorders under the reader: results already shown stay where they are while batches land, new results that rank above them are announced \u2014 *n new results rank above \u2014 fold in* \u2014 and folded in on request; a result the reader opened is marked and keeps its position even then. The list is remembered per item and query, so coming back to the page shows it at once and carries on from where it stopped, without re-ranking. The default batch is a hundred sites, measured to answer in under half a second on a Pi over a tailnet."
+      },
+      "after": "07eec3cdb7b07eb2",
+      "date": 1788568811895
     }
   ]
 }

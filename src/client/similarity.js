@@ -43,7 +43,7 @@ import { slugify, effectiveSpecs, resolveDomains } from './scope.js'
 import { loadVectors, getEmbedding, lookupPageVector, cosineScan, loadDomainEntries } from './vectors.js'
 import { resolveSubject, subjectNote } from './subject.js'
 import { readCache, writeCache, cacheAge } from './cache.js'
-import { runBatched } from './batch.js'
+import { runBatched, keyOf } from './batch.js'
 import { loadAlgorithm, parseAlgorithm, learnedSignals } from './algorithm.js'
 import { credit, learned, forget, installAmbient, rememberInto } from './learn.js'
 import { STYLES, siteFlag } from './styles.js'
@@ -413,22 +413,29 @@ export const bind = (div, item) => {
               title: pageTitle, text: null, isSelf: true }
           })()
 
-          const domainEntries = await loadDomainEntries(await specsP, origin)
-          const total = domainEntries.reduce((n, e) => n + e.pages.length, 0)
-          status.textContent = (subject ? `${subjectNote(s)} · ` : '') +
-            `Searching ${total.toLocaleString()} pages…`
-
-          let qVec = await lookupPageVector(s.slug, s.site)
-          if (!qVec) {
-            status.textContent = 'Embedding page (not yet indexed)…'
-            const pageText = s.text || $page.find('.item')
-              .map((_, el) => $(el).text().trim()).get().filter(Boolean).join('\n')
-            qVec = await getEmbedding(pageText || s.title, origin)
+          // One request (Personal Search Plan, Phase 1): the server holds every
+          // vector and the seed page's own, so it answers a seeded report in
+          // one round trip. This item used to pull every site's vectors into
+          // the browser — 417 requests and 167 MB on the Cafe — before it
+          // could score a single page.
+          const eff = await specsP
+          status.textContent = (subject ? `${subjectNote(s)} · ` : '') + 'Asking for pages like this one…'
+          const pageText = s.text || $page.find('.item')
+            .map((_, el) => $(el).text().trim()).get().filter(Boolean).join('\n').slice(0, 2000)
+          const body = {
+            query: s.title, domains: eff.length ? eff : ['*'], limit, flat: true,
+            seed: { site: s.site, slug: s.slug }, text: pageText || s.title,
+            excludePage: { site: s.site, slug: s.slug },
           }
-
-          const scored = cosineScan(qVec, domainEntries, {
-            threshold, limit, excludeSlug: s.slug, excludeDomain: s.site,
+          if (thresholdSet) body.threshold = threshold
+          const res = await fetch(`${origin}/system/search-report.json`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
           })
+          if (!res.ok) throw new Error(`search-report failed: ${res.status}`)
+          const flat = await res.json()
+          const scored = (flat.results || []).map(r => ({
+            domain: r.site, slug: r.slug, title: r.title, score: r.semantic ?? r.score,
+          }))
           renderScored(scored, null)
           if (subject) {  // keep the subject visible above the results
             status.textContent = subjectNote(s)
@@ -563,7 +570,7 @@ export const bind = (div, item) => {
       : eff.some(sp => sp.toUpperCase() === 'GALAXY')
     const results = div.find('.sim-results')[0]
 
-    const doBatched = async (query, eff, seeded) => {
+    const doBatched = async (query, eff, seeded, resume = null) => {
       const algorithm = await loadAlgorithm(algorithmRef, origin)
       const rosterDomains = eff.filter(sp => !isScope(sp) && sp !== '*' && !isGlob(sp))
       let ghost = null
@@ -574,7 +581,7 @@ export const bind = (div, item) => {
         ghost = div.parents('.page').next('.page')
       }
       const render = (merged, state) => {
-        const shown = merged.slice(0, limit)
+        const shown = state.shown && state.shown.length ? state.shown : merged.slice(0, limit)
         const head = state.running
           ? `Searched ${state.searched.toLocaleString()} of ${state.total.toLocaleString()} sites — ` +
             `${merged.length} results — searching…`
@@ -599,8 +606,14 @@ export const bind = (div, item) => {
           if (info?.indexedAt) bits.push(`indexed ${shortDate(info.indexedAt * 1000)}${info.placedBy ? ` by ${info.placedBy}` : ''}`)
           return bits.length ? ` <small class="sim-src">${bits.join(' · ')}</small>` : ''
         }
-        results.innerHTML = `<h3>${head}</h3>${tier}<ul>${
-          shown.map(r => `<li>${simLink(r.site, r.slug, r.title, r.semantic)}` + provenance(r) +
+        const opened = state.opened || new Set()
+        const pendingLine = state.pending
+          ? `<li class="sim-pending"><small>${state.pending} new result${state.pending > 1 ? 's' : ''} rank${state.pending > 1 ? '' : 's'} above — ` +
+            `<button class="sim-fold">fold in</button></small></li>` : ''
+        const cachedNote = state.resumed && !state.running && cache?.batched?.ts ? ` · ${cacheAge(cache.batched.ts)}` : ''
+        results.innerHTML = `<h3>${head}${cachedNote}</h3>${tier}<ul>${pendingLine}${
+          shown.map(r => `<li${opened.has(keyOf(r)) ? ' class="sim-opened"' : ''}>${simLink(r.site, r.slug, r.title, r.semantic)}` + provenance(r) +
+            (opened.has(keyOf(r)) ? ` <small class="sim-mark">opened</small>` : '') +
             (r.siblings?.length ? ` <small>+${r.siblings.length}</small>` : '') +
             (r.movedFrom ? ` <small>moved here from ${r.movedFrom}</small>` : '') +
             (r.gone ? ` <small>site ${r.gone}${r.movedTo ? `, probably now ${r.movedTo}` : ''}</small>` : '') + '</li>').join('')
@@ -614,10 +627,13 @@ export const bind = (div, item) => {
         results.querySelector('.sim-stop')?.addEventListener('click', () => state.stop())
         results.querySelector('.sim-more')?.addEventListener('click', () => state.continueAll())
         results.querySelector('.sim-open')?.addEventListener('click', () => openAsPage(merged))
+        results.querySelector('.sim-fold')?.addEventListener('click', () => state.foldIn())
         results.querySelectorAll('.sim-link').forEach(a => a.addEventListener('click', e => {
           e.preventDefault()
           const { site, slug, title } = a.dataset
           credit(site, 'clicked')
+          // the result opens beside the list; the list marks it and keeps its place
+          state.markOpened(keyOf({ site, slug }))
           window.wiki.pageHandler.context = { site: window.location.hostname, slug: 'search-tool' }
           window.wiki.doInternalLink(title, div.parents('.page'), site)
         }))
@@ -625,8 +641,10 @@ export const bind = (div, item) => {
       status.textContent = ''
       const out = await runBatched({
         origin, query, seeded, specs: eff.length ? eff : ['GALAXY'], limit, threshold, thresholdSet,
-        batch: batch || 50, roster: rosterDomains, algorithm, render,
+        batch: batch || 100, roster: rosterDomains, algorithm, render, resume,
         status: t => { status.textContent = t },
+        // remember the list per item and query, so coming back shows it at once
+        save: snap => writeCache(item, { batched: { ...snap, ts: Date.now() } }),
       })
       status.textContent = readyLine
       return out
@@ -680,9 +698,25 @@ export const bind = (div, item) => {
     // A query typed into the wiki's search box and sent here by the search
     // door. Only the farm-wide report takes it: that is the scope the box
     // used to search, and picking any nearer one would quietly narrow it.
+    let handedOver = false
     if (mode === 'report' && specs.join(',') === '*') {
       const handed = takePending()
-      if (handed) { input.value = handed; doReport() }
+      if (handed) { input.value = handed; doReport(); handedOver = true }
+    }
+    // Keep your place: a batched item that remembers a list for this exact
+    // DSL draws it at once and carries on from where it stopped — no
+    // re-ranking, no refetch of what was already read.
+    if (!handedOver && mode === 'report' && cache?.batched?.query) {
+      const remembered = cache.batched
+      input.value = remembered.query
+      ;(async () => {
+        try {
+          const eff = await specsP
+          if (!batched(eff)) return
+          const seeded = subject && remembered.query === subject.title ? seedParams() : {}
+          await doBatched(remembered.query, eff, seeded, remembered)
+        } catch (e) { status.textContent = `Remembered list unavailable: ${e.message}` }
+      })()
     }
 
   } else if (mode === 'sites') {

@@ -44,7 +44,7 @@
   {
    "type": "similarity",
    "id": "8b616e19c4ff3973",
-   "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nWEIGHT stale 0.2\nTRUST flaky\nBATCH 50"
+   "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nWEIGHT stale 0.2\nTRUST flaky\nBATCH 100"
   },
   {
    "type": "markdown",
@@ -116,7 +116,7 @@
      {
       "type": "similarity",
       "id": "8b616e19c4ff3973",
-      "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nBATCH 50"
+      "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nBATCH 100"
      },
      {
       "type": "markdown",
@@ -149,7 +149,7 @@
    "item": {
     "type": "similarity",
     "id": "8b616e19c4ff3973",
-    "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nWEIGHT stale 0.2\nTRUST flaky\nBATCH 50"
+    "text": "ALGORITHM\nWEIGHT liked 1.0\nWEIGHT visited 0.6\nWEIGHT neighbourhood 0.4\nWEIGHT followed 0.2\nWEIGHT centroid 1.0\nWEIGHT fresh 0.2\nWEIGHT reliable 0.3\nWEIGHT stale 0.2\nTRUST flaky\nBATCH 100"
    },
    "date": 1788517953986
   },

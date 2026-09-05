@@ -636,7 +636,7 @@ const startServer = ({ argv, app }) => {
         ranked = ranked.filter(r => r.kind !== 'own')
       }
       if (c.exclude) ranked = ranked.filter(r => !c.exclude.has(r.domain))
-      const size = Math.max(5, Math.min(500, parseInt(body.batch) || 50))
+      const size = Math.max(5, Math.min(500, parseInt(body.batch) || 100))
       const limit = parseInt(body.limit) || ranked.length
       const sites = ranked.slice(0, limit)
       // Demand feeds supply: unindexed sites in the top fifty are wanted.
