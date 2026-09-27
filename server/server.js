@@ -388,6 +388,8 @@ const startServer = ({ argv, app }) => {
   // indexer host — the similarity server never writes it).
   app.get('/system/galaxy-registry.json', (req, res) => {
     cors(res)
+    // Galaxy off (WIKI_GALAXY_VECTORS=off): no tree, so no registry either.
+    if (!galaxyDir) return res.status(404).json({ error: 'no galaxy registry on this host' })
     fs.readFile(path.join(galaxyDir, 'registry.json'), 'utf8', (err, data) => {
       if (err) return res.status(404).json({ error: 'no galaxy registry on this host' })
       res.type('application/json').send(data)
