@@ -71,6 +71,7 @@ const https  = require('node:https')
 
 const { loadRestricted, matchesAny, listDomains, findInFarms } = require('./farm-lib')
 const embedder     = require('./embedder')
+const rustCore     = require('./rust-core')
 const { buildReport, buildReportFlat, seedVector } = require('./search-report')
 const { loadSiteIndex, refreshFromPeers, localSites, siteIndexStats, indexFile, noteWanted,
         loadVerdicts, refreshVerdicts, verdictStats } = require('./site-index')
@@ -86,7 +87,7 @@ const { warmUp, countPages } = require('./vector-store')
 const { resolveAuthor } = require('./author-index')
 const { ceiling, grantingDomains, guardEnvelope } = require('./peer-guard')
 const { postToPeer, appendPeerSections, makePeerDesk, setModelMeta } = require('./peer')
-const { parseNets, isTrusted } = require('./trust')
+const { parseNets, isTrusted, trustedSession } = require('./trust')
 
 const MODEL_META = { model: 'BAAI/bge-small-en-v1.5', dim: 384 }
 const PLUGIN_VERSION = (() => {
@@ -183,6 +184,11 @@ const getJson = url =>
 const readBody = req =>
   new Promise((resolve, reject) => {
     if (req.body && typeof req.body === 'object') return resolve(req.body)
+    // read already by the Rust core's middleware (rust-core.js)
+    if (typeof req.rawBodyText === 'string') {
+      try { return resolve(req.rawBodyText ? JSON.parse(req.rawBodyText) : {}) }
+      catch (e) { return reject(new Error(`invalid JSON body: ${e.message}`)) }
+    }
     let data = ''
     req.on('data', chunk => { data += chunk })
     req.on('end', () => {
@@ -318,6 +324,7 @@ const startServer = ({ argv, app }) => {
   // Warm the embedding model in the background so the first query is fast.
   if (!embedUrl()) embedder.warm()
 
+
   async function embedText(text) {
     const url = embedUrl()
     if (!url) return embedder.embed(text)
@@ -339,6 +346,27 @@ const startServer = ({ argv, app }) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   }
+
+  // WIKI_SIMILARITY_CORE=rust: the Rust core (WebAssembly) answers what it
+  // can ahead of the routes below; the rest fall through to them.
+  rustCore.mount(app, {
+    farmRoot,
+    wikiDomains: argv.wikiDomains,
+    version: PLUGIN_VERSION,
+    localEmbedderAvailable: localEmbedderAvailable(),
+    embedText,
+    embedStatus: () => {
+      const url = embedUrl()
+      return url ? { via: 'url', url, source: embedUrlSource() } : embedder.status()
+    },
+    trustedSession: req => trustedSession(req, app.securityhandler,
+      (() => { try { return fs.existsSync(ownerFile) } catch { return false } })()),
+    authorized: req => {
+      const sh = app.securityhandler
+      try { return !!sh && (!!sh.isAdmin?.(req) || !!sh.isAuthorized?.(req)) } catch { return false }
+    },
+    cors,
+  })
 
   for (const route of ['/system/indexed-domains.json', '/system/semantic-vectors.json',
                        '/system/embed.json', '/system/search-report.json',
