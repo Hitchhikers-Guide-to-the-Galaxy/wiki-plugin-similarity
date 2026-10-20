@@ -390,6 +390,7 @@
    "get": {
     "x-fedwiki-served-by": "plugin",
     "x-fedwiki-writes": true,
+    "x-fedwiki-spends": true,
     "operationId": "buildIndex",
     "summary": "Ask for an index build",
     "description": "Delegates: to a remote indexer if one is configured, otherwise to semindex in this process, otherwise it says plainly that there is none. Owner or admin only in the local case.",
