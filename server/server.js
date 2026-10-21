@@ -315,6 +315,32 @@ const startServer = ({ argv, app }) => {
   })
   const ctxFor = req => trusted(req) ? ctx : { ...ctx, exclude: restricted }
   const visible = (req, domain) => !restricted.has(domain) || trusted(req)
+  // Named sites searched over HTTP (galaxy-search, farm-search's off-farm
+  // hosts) are fetched FROM this server, which sits on a tailnet: an untrusted
+  // caller must not reach a tailnet-only, local or restricted site just by
+  // naming it (2026-10-21: public fedwiki.club answered for chat.private.fish).
+  const PRIVATE_NAME = /(^|\.)(private\.fish|localhost|local|ts\.net|internal|lan)$/i
+  // The galaxy's registry and Site Index name sites: an untrusted caller gets
+  // a copy without the private ones, remade only when the file changes.
+  const publicCopy = new Map()
+  const isPrivateName = d => PRIVATE_NAME.test(String(d || '').split(':')[0])
+  const dropPrivate = data => {
+    const keep = x => !isPrivateName(typeof x === 'string' ? x : (x && (x.domain || x.site)))
+    const strip = o => Array.isArray(o) ? o.filter(keep)
+      : Object.fromEntries(Object.entries(o).filter(([k]) => !isPrivateName(k)))
+    if (data && typeof data === 'object' && data.sites && typeof data.sites === 'object') return { ...data, sites: strip(data.sites) }
+    return data && typeof data === 'object' ? strip(data) : data
+  }
+  const publicBody = file => {
+    const { mtimeMs } = fs.statSync(file)
+    const hit = publicCopy.get(file)
+    if (hit && hit.mtimeMs === mtimeMs) return hit.body
+    const body = JSON.stringify(dropPrivate(JSON.parse(fs.readFileSync(file, 'utf8'))))
+    publicCopy.set(file, { mtimeMs, body })
+    return body
+  }
+  const reachable = (req, site) => trusted(req) ||
+    (!PRIVATE_NAME.test(String(site).split(':')[0]) && !restricted.has(String(site).split(':')[0]))
 
   console.log('[wiki-plugin-similarity] registering /system routes, farms:',
     farms.map(([f]) => f).join(', '),
@@ -418,7 +444,12 @@ const startServer = ({ argv, app }) => {
     cors(res)
     // Galaxy off (WIKI_GALAXY_VECTORS=off): no tree, so no registry either.
     if (!galaxyDir) return res.status(404).json({ error: 'no galaxy registry on this host' })
-    fs.readFile(path.join(galaxyDir, 'registry.json'), 'utf8', (err, data) => {
+    const file = path.join(galaxyDir, 'registry.json')
+    if (!trusted(req)) {
+      try { return res.type('application/json').send(publicBody(file)) }
+      catch { return res.status(404).json({ error: 'no galaxy registry on this host' }) }
+    }
+    fs.readFile(file, 'utf8', (err, data) => {
       if (err) return res.status(404).json({ error: 'no galaxy registry on this host' })
       res.type('application/json').send(data)
     })
@@ -632,6 +663,9 @@ const startServer = ({ argv, app }) => {
     res.setHeader('Last-Modified', stat.mtime.toUTCString())
     res.setHeader('Cache-Control', 'public, max-age=3600')
     res.setHeader('Content-Type', 'application/json')
+    if (!trusted(req)) {
+      try { return res.send(publicBody(file)) } catch { return res.status(404).json({ error: 'site index unreadable' }) }
+    }
     fs.createReadStream(file).pipe(res)
   })
 
@@ -737,9 +771,10 @@ const startServer = ({ argv, app }) => {
       // Split explicit hostnames into on-disk domains and off-farm galaxy sites
       const isExplicit = p => !p.includes('*') && !p.includes('?') &&
         !['PUBLIC', 'LOCAL', 'PRIVATE'].includes(p) && p.includes('.')
-      const galaxySites = patterns.filter(p =>
+      const offFarm = patterns.filter(p =>
         isExplicit(p) && !findInFarms(farms, p, 'status/site-index.json'))
-      const localPatterns = patterns.filter(p => !galaxySites.includes(p))
+      const galaxySites = offFarm.filter(p => reachable(req, p))
+      const localPatterns = patterns.filter(p => !offFarm.includes(p))
 
       const outcome = localPatterns.length
         ? searchFarm(farms, localPatterns, restricted, q, limit,
@@ -778,8 +813,9 @@ const startServer = ({ argv, app }) => {
     cors(res)
     const q = (req.query.q || '').trim()
     const sites = (req.query.sites || '').split(',').map(s => s.trim()).filter(Boolean)
+      .filter(s => reachable(req, s))
     if (!q) return res.status(400).json({ error: 'q parameter required' })
-    if (!sites.length) return res.status(400).json({ error: 'sites parameter required' })
+    if (!sites.length) return res.status(400).json({ error: 'sites parameter required (private or restricted sites are not searched for this caller)' })
     const limit = parseInt(req.query.limit) || 10
     try {
       const outcome = await searchGalaxy(sites, q, limit)
